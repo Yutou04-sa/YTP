@@ -1,7 +1,7 @@
 <!-- 说明：本项目派生自一个 GPL-3.0 的上游项目，公开分发时请自行补上对上游的署名与本仓库地址。 -->
 # YTP Framework
 
-[![Download](https://img.shields.io/github/v/release/Yutou04-sa/YTP?color=orange&logoColor=orange&label=Download&logo=DocuSign)](https://github.com/Yutou04-sa/YTP/releases/latest) [![Total](https://shields.io/github/downloads/Yutou04-sa/YTP/total?logo=Bookmeter&label=Counts&logoColor=yellow&color=yellow)](https://github.com/Yutou04-sa/YTP/releases)
+[![Android CI](https://github.com/Yutou04-sa/YTP/actions/workflows/android.yml/badge.svg)](https://github.com/Yutou04-sa/YTP/actions/workflows/android.yml) [![Download](https://img.shields.io/github/v/release/Yutou04-sa/YTP?color=orange&logoColor=orange&label=Download&logo=DocuSign)](https://github.com/Yutou04-sa/YTP/releases/latest) [![Total](https://shields.io/github/downloads/Yutou04-sa/YTP/total?logo=Bookmeter&label=Counts&logoColor=yellow&color=yellow)](https://github.com/Yutou04-sa/YTP/releases)
 
 ## Introduction
 

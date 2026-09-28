@@ -72,11 +72,9 @@ jobs:
         run: |
           set -euo pipefail
           ver="${TAG#v}"
-          mkdir -p assets
-          cp out/release/*.apk "assets/YTP-${ver}-release.apk"
           gh release delete "$TAG" --yes 2>/dev/null || true
           gh release create "$TAG" \
             --latest \
             --title "YTP ${ver}" \
-            --notes "Automatically built from \`${GITHUB_SHA}\` by [run ${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})." \
-            assets/*.apk
+            --notes "Automatically built by [run ${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})." \
+            out/release/*.apk
