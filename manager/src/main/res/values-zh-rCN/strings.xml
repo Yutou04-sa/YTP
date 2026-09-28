@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="add">添加</string>
+    <string name="install">安装</string>
+    <string name="uninstall">卸载</string>
+    <string name="copy_error">复制错误信息</string>
+    <string name="apps">应用</string>
+    <string name="screen_repo">仓库</string>
+    <string name="error_unknown">未知错误</string>
+    <string name="search_hint">搜索应用或包名</string>
+    <string name="action_back">返回</string>
+    <!-- Home Screen -->
+    <string name="home_api_version">API 版本</string>
+    <string name="home_ytpatch_version">YTP 版本</string>
+    <string name="home_system_version">系统版本</string>
+    <string name="home_device">设备名称</string>
+    <string name="home_system_abi">系统架构</string>
+    <string name="home_view_source_code"><![CDATA[加入 %1$s]]></string>
+    <string name="home_telegram_channel">TG 交流频道</string>
+    <string name="home_tagline">释放安卓更多可能</string>
+    <string name="home_feature_no_root">免Root</string>
+    <string name="home_feature_module_compatibility">简单修补</string>
+    <string name="home_feature_extension_freedom">灵活扩展</string>
+    <string name="home_telegram_desc">@Yutou_v50 · 获取更新与社区支持</string>
+
+    <!-- New Patch Screen -->
+    <string name="screen_new_patch">新建修补</string>
+    <string name="patch_select_dir_title">选择存储目录</string>
+    <string name="patch_select_dir_text">修补后的 APK 将保存到此目录</string>
+    <string name="patch_select_dir_error">设置存储目录时出错</string>
+    <string name="patch_from_storage">从存储目录中选择Apk</string>
+    <string name="patch_from_applist">选择已安装的应用程序</string>
+    <string name="patch_integrated">集成模式</string>
+    <string name="patch_integrated_desc">修补前建议手动过签目标应用！</string>
+    <string name="patch_integrated_signature_note">YTP无过签能力</string>
+    <string name="patch_embed_modules">嵌入模块</string>
+    <string name="patch_embed_modules_count">已嵌入模块（%1$d）</string>
+    <string name="patch_identity_title">应用标识</string>
+    <string name="patch_identity_desc">改包名后补丁会作为新应用安装，可与原应用共存；留空即保持原样。</string>
+    <string name="patch_new_package_name">新包名</string>
+    <string name="patch_new_app_label">应用名</string>
+    <string name="patch_identity_hint">留空表示保持原样</string>
+    <string name="patch_identity_invalid">包名格式不对：至少需要一个点，例如 com.example.newapp</string>
+    <string name="patch_embed_modules_dialog_desc">选择模块来源，可一次添加多个</string>
+    <string name="patch_embed_modules_selected">已选择 %1$d 个模块</string>
+    <string name="patch_selected_count">已选择 %1$d 个</string>
+    <string name="patch_embed_modules_from_storage">从存储选择模块</string>
+    <string name="patch_embed_modules_from_storage_desc">选择一个或多个模块 APK</string>
+    <string name="patch_embed_modules_from_apps">选择已安装模块</string>
+    <string name="patch_embed_modules_from_apps_desc">从已安装的模块中选择</string>
+    <string name="patch_start">开始修补</string>
+    <string name="patch_return">返回</string>
+    <string name="patch_install_successfully">安装成功</string>
+    <string name="patch_install_failed">安装失败</string>
+    <string name="patch_no_xposed_module">非 Xposed 模块</string>
+    <string name="patch_status_patching">正在修补</string>
+    <!-- Select Apps Screen -->
+    <string name="screen_select_apps">选择应用程序</string>
+    <string name="permission_denied">权限不足</string>
+    <string name="permission_required">请授予获取应用列表权限</string>
+    <string name="go_to_settings">前往设置</string>
+    <string name="selection_done">完成（%1$d）</string>
+    <string name="apps_empty">暂无可用应用</string>
+    <string name="search_empty">请尝试其他应用名称或包名</string>
+    <!-- Settings Screen -->
+    <string name="screen_settings">设置</string>
+    <string name="settings_keystore">签名密钥库</string>
+    <string name="settings_keystore_default">内置</string>
+    <string name="settings_keystore_custom">自定义</string>
+    <string name="settings_keystore_dialog_title">自定义密钥库</string>
+    <string name="settings_keystore_file">密钥库文件</string>
+    <string name="settings_keystore_password">密码</string>
+    <string name="settings_keystore_alias">别名</string>
+    <string name="settings_keystore_alias_password">别名密码</string>
+    <string name="settings_keystore_desc">设置密钥库（BKS）</string>
+    <string name="settings_keystore_wrong_keystore">密钥库类型错误</string>
+    <string name="settings_keystore_wrong_password">密钥库密码错误</string>
+    <string name="settings_keystore_wrong_alias">别名错误</string>
+    <string name="settings_keystore_wrong_alias_password">别名密码错误</string>
+    <string name="settings_detail_patch_logs">详细修补日志</string>
+    <string name="settings_storage_directory">更改存储目录</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_delete">删除</string>
+    <string name="settings_group_theme">主题设置</string>
+
+    <string name="settings_group_theme_hint">配色与背景</string>
+
+    <string name="settings_group_other">其他</string>
+    <string name="settings_group_other_hint">了解更多</string>
+    <string name="settings_detail_patch_logs_description">记录修补过程的详细日志</string>
+    <string name="settings_color_palette">调色盘</string>
+    <string name="settings_color_palette_value">主色：%1$s</string>
+    <string name="settings_color_palette_title">自定义配色</string>
+    <string name="settings_color_palette_preview">预览</string>
+    <string name="settings_color_palette_hex">主色（HEX）</string>
+    <string name="settings_color_palette_invalid">请输入有效颜色，例如 #4075CA</string>
+    <string name="settings_color_palette_reset">恢复默认</string>
+    <string name="settings_color_palette_apply">应用</string>
+
+    <string name="settings_background">背景替换</string>
+
+    <string name="settings_background_default">当前使用默认纯色背景</string>
+
+    <string name="settings_background_custom">已设置自定义背景</string>
+
+    <string name="settings_background_dialog_text">选择一张图片作为页面背景，页面内容会显示在图片之上。</string>
+
+    <string name="settings_background_pick">选择图片</string>
+
+    <string name="settings_background_reset">恢复默认</string>
+
+    <string name="settings_background_error">设置背景失败，请换一张图片试试</string>
+
+    <string name="settings_surface_alpha">控件透明度</string>
+
+    <string name="settings_surface_alpha_desc">调低后卡片半透明，替换的背景会透出来</string>
+    <string name="settings_about_description">功能介绍</string>
+    <!-- About Screen -->
+    <string name="about_hook_title">Hook日志路径</string>
+    <string name="about_hook_description">/Android/data/目标应用包名/files/ytp/log/</string>
+    <string name="about_module_manager_title">世界之门</string>
+    <string name="about_module_manager_description">此功能不依赖YTP，修补后长按桌面应用图标即可打开「世界之门」界面</string>
+    <string name="about_thanks">致谢</string>
+
+    <!--Repo-->
+    <string name="repo_update_time">更新时间</string>
+    <string name="repo_app_name">应用名</string>
+    <string name="repo_retry">重试</string>
+    <string name="repo_details">详情</string>
+    <string name="repo_version">版本</string>
+    <string name="repo_info">信息</string>
+    <string name="repo_empty_readme_text">暂无说明文档</string>
+    <string name="repo_empty_collaborators_text">暂无贡献者信息</string>
+    <string name="repo_empty_modules">未找到模块</string>
+    <string name="repo_no_version">暂无版本信息</string>
+
+    <!--Restore original apk-->
+    <string name="restore_original_apk">原包</string>
+    <string name="restore_empty_title">暂无备份</string>
+    <string name="restore_empty_description">修补应用时会自动把原包备份到这里</string>
+    <string name="restore_backup_info">版本 %1$s · %2$s · 备份于 %3$s</string>
+    <string name="restore_state_missing">未安装</string>
+    <string name="restore_state_patched">已安装修补版</string>
+    <string name="restore_state_original">已安装原版</string>
+    <string name="restore_install_original">安装原包</string>
+    <string name="restore_delete_backup">删除备份</string>
+    <string name="restore_delete_message">删除 %1$s 的原包备份？</string>
+    <string name="restore_delete_failed">删除备份失败</string>
+    <string name="restore_handed_over">已交给系统安装器</string>
+    <string name="restore_install_failed">无法启动安装</string>
+    <string name="restore_extract">提取</string>
+    <string name="restore_extract_done">已提取到 %1$s</string>
+    <string name="restore_extract_failed">提取备份失败</string>
+    <string name="restore_cancel">取消</string>
+
+    <!--Modules / patched apps management-->
+    <string name="home_modules">模块</string>
+    <string name="home_patched_apps">应用</string>
+    <string name="module_manager_title">模块</string>
+    <string name="module_manager_count">共 %1$d 个已安装模块</string>
+    <string name="module_manager_empty_title">没有找到模块</string>
+    <string name="module_manager_empty_description">设备上已安装的 Xposed / LSPatch 模块会显示在这里</string>
+    <string name="module_manager_type_legacy">传统模块</string>
+    <string name="module_manager_type_api">targetApiVersion %1$s</string>
+    <string name="patched_apps_title">应用</string>
+    <string name="patched_apps_count">共 %1$d 个已修补应用</string>
+    <string name="patched_apps_empty_title">还没有已修补的应用</string>
+    <string name="patched_apps_empty_description">用 YTP 修补成功的应用会显示在这里</string>
+    <string name="patched_apps_state">已修补</string>
+    <string name="patched_apps_extract_original">提取原包</string>
+    <string name="patched_apps_repatch">重新修补</string>
+    <string name="patch_repatch_no_backup">没有可用的原包备份</string>
+    <string name="patched_apps_no_backup">没有原包备份</string>
+    <!--Module management actions-->
+    <string name="module_action_more">更多操作</string>
+    <string name="module_action_open">打开模块</string>
+    <string name="module_action_app_info">应用信息</string>
+    <string name="module_action_export">导出APK</string>
+    <string name="module_action_uninstall">卸载</string>
+    <string name="module_uninstall_title">卸载 %1$s？</string>
+    <string name="module_uninstall_message">该模块将从设备上移除，已内嵌该模块的已修补应用不受影响。</string>
+    <string name="module_export_success">已导出 %1$s</string>
+    <string name="module_export_failed">导出模块失败</string>
+</resources>

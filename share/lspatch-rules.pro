@@ -1,0 +1,11 @@
+-keepnames class org.lsposed.lspd.deopt.*
+-keepnames class org.lsposed.lspd.hooker.** { *; }
+-keepnames class org.matrix.vector.impl.VectorContext
+-keepnames class org.lsposed.lspd.impl.LSPosedHelper
+-keepnames class org.lsposed.lspd.impl.LSPosedHookCallback
+-keepnames class org.matrix.vector.impl.hookers
+-keepnames class org.matrix.vector.impl.utils.VectorModuleClassLoader
+-keepnames class org.matrix.vector.impl.utils.VectorMetaDataReader
+
+-repackageclasses org.lsposed.external
+-keepattributes SourceFile,LineNumberTable

@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="add">Add</string>
+    <string name="install">Install</string>
+    <string name="uninstall">Uninstall</string>
+    <string name="copy_error">Copy error</string>
+    <string name="apps">Apps</string>
+    <string name="screen_repo">Repo</string>
+    <string name="error_unknown">Unknown error</string>
+    <string name="search_hint">Search apps and packages</string>
+    <string name="action_back">Back</string>
+
+    <!-- Home Screen -->
+    <string name="home_api_version">API Version</string>
+    <string name="home_ytpatch_version">YTP Version</string>
+    <string name="home_system_version">System Version</string>
+    <string name="home_device">Device</string>
+    <string name="home_system_abi">System ABI</string>
+    <string name="home_view_source_code"><![CDATA[Join %1$s]]></string>
+    <string name="home_telegram_channel">our Telegram channel</string>
+    <string name="home_tagline">More freedom for Android</string>
+    <string name="home_feature_no_root">Rootless</string>
+    <string name="home_feature_module_compatibility">Module compatible</string>
+    <string name="home_feature_extension_freedom">Extensible</string>
+    <string name="home_telegram_desc">@Yutou_v50 · Updates and community support</string>
+
+    <!-- New Patch Screen -->
+    <string name="screen_new_patch">New Patch</string>
+    <string name="patch_select_dir_title">Select storage directory</string>
+    <string name="patch_select_dir_text">Patched APKs will be saved here</string>
+    <string name="patch_select_dir_error">Error when setting storage directory</string>
+    <string name="patch_from_storage">Select Apk from storage</string>
+    <string name="patch_from_applist">Select an installed app</string>
+    <string name="patch_integrated">Integrated</string>
+    <string name="patch_integrated_desc">It is recommended to manually check the target application before patching!</string>
+    <string name="patch_integrated_signature_note">YTP does not provide signature bypass</string>
+    <string name="patch_embed_modules">Embed modules</string>
+    <string name="patch_embed_modules_count">Embedded modules (%1$d)</string>
+    <string name="patch_identity_title">App identity</string>
+    <string name="patch_identity_desc">Renaming the package installs the patch as a separate app that can live next to the original. Leave a field empty to keep the original value.</string>
+    <string name="patch_new_package_name">New package name</string>
+    <string name="patch_new_app_label">App name</string>
+    <string name="patch_identity_hint">Leave empty to keep the original</string>
+    <string name="patch_identity_invalid">Invalid package name: it needs at least one dot, e.g. com.example.newapp</string>
+    <string name="patch_embed_modules_dialog_desc">Choose a source and add multiple modules</string>
+    <string name="patch_embed_modules_selected">%1$d modules selected</string>
+    <string name="patch_selected_count">%1$d selected</string>
+    <string name="patch_embed_modules_from_storage">Choose module APKs</string>
+    <string name="patch_embed_modules_from_storage_desc">Choose one or more module APKs</string>
+    <string name="patch_embed_modules_from_apps">Choose installed modules</string>
+    <string name="patch_embed_modules_from_apps_desc">Pick from installed modules</string>
+    <string name="patch_start">Start Patch</string>
+    <string name="patch_return">Return</string>
+    <string name="patch_install_successfully">Install successfully</string>
+    <string name="patch_install_failed">Install failed</string>
+    <string name="patch_no_xposed_module">No Xposed module(s)</string>
+    <string name="patch_status_patching">Patching in progress</string>
+
+    <!-- Select Apps Screen -->
+    <string name="screen_select_apps">Select Apps</string>
+    <string name="permission_denied">Permission denied</string>
+    <string name="permission_required">Please grant permission to access the app list</string>
+    <string name="go_to_settings">Go to Settings</string>
+    <string name="selection_done">Done (%1$d)</string>
+    <string name="apps_empty">No apps available</string>
+    <string name="search_empty">Try a different app name or package</string>
+
+    <!-- Settings Screen -->
+    <string name="screen_settings">Settings</string>
+    <string name="settings_keystore">Signature keystore</string>
+    <string name="settings_keystore_default">Built-in</string>
+    <string name="settings_keystore_custom">Custom</string>
+    <string name="settings_keystore_dialog_title">Custom keystore</string>
+    <string name="settings_keystore_file">Keystore file</string>
+    <string name="settings_keystore_password">Password</string>
+    <string name="settings_keystore_alias">Alias</string>
+    <string name="settings_keystore_alias_password">Alias password</string>
+    <string name="settings_keystore_desc">Set keystore (BKS)</string>
+    <string name="settings_keystore_wrong_keystore">Wrong type of keystore</string>
+    <string name="settings_keystore_wrong_password">Wrong keystore password</string>
+    <string name="settings_keystore_wrong_alias">Wrong alias name</string>
+    <string name="settings_keystore_wrong_alias_password">Wrong alias password</string>
+    <string name="settings_storage_directory">change storage directory</string>
+    <string name="settings_detail_patch_logs">Detail patch logs</string>
+    <string name="settings_about">About</string>
+    <string name="settings_delete">Delete</string>
+    <string name="settings_group_theme">Theme</string>
+
+    <string name="settings_group_theme_hint">Colors and background</string>
+
+    <string name="settings_group_other">Other</string>
+    <string name="settings_group_other_hint">Learn more</string>
+    <string name="settings_detail_patch_logs_description">Detailed logs of patching process</string>
+    <string name="settings_color_palette">Color palette</string>
+    <string name="settings_color_palette_value">Primary color: %1$s</string>
+    <string name="settings_color_palette_title">Customize colors</string>
+    <string name="settings_color_palette_preview">Preview</string>
+    <string name="settings_color_palette_hex">Primary color (HEX)</string>
+    <string name="settings_color_palette_invalid">Enter a valid color such as #4075CA</string>
+    <string name="settings_color_palette_reset">Reset</string>
+    <string name="settings_color_palette_apply">Apply</string>
+
+    <string name="settings_background">Background</string>
+
+    <string name="settings_background_default">Using the default solid background</string>
+
+    <string name="settings_background_custom">Custom background is set</string>
+
+    <string name="settings_background_dialog_text">Pick an image to use as the page background. Page content is drawn on top of it.</string>
+
+    <string name="settings_background_pick">Pick image</string>
+
+    <string name="settings_background_reset">Reset</string>
+
+    <string name="settings_background_error">Could not set the background, try another image</string>
+
+    <string name="settings_surface_alpha">Widget opacity</string>
+
+    <string name="settings_surface_alpha_desc">Lower it to let the background image show through the cards</string>
+    <string name="settings_about_description">Feature introduction</string>
+    <!-- About Screen -->
+    <string name="about_hook_title">Hook log path</string>
+    <string name="about_hook_description">/Android/data/Target app package name/files/ytp/log/</string>
+    <string name="about_module_manager_title">World Gate</string>
+    <string name="about_module_manager_description">Does not rely on YTP. After patching, long-press the app icon on the home screen to open the World Gate screen</string>
+    <string name="about_thanks">Credits</string>
+
+    <!--Repo-->
+    <string name="repo_update_time">Time</string>
+    <string name="repo_app_name">AppName</string>
+    <string name="repo_retry">Retry</string>
+    <string name="repo_details">Details</string>
+    <string name="repo_version">Version</string>
+    <string name="repo_info">Info</string>
+    <string name="repo_empty_readme_text">No documentation is available</string>
+    <string name="repo_empty_collaborators_text">There is no contributor information at this time</string>
+    <string name="repo_empty_modules">No modules found</string>
+    <string name="repo_no_version">No version information available</string>
+
+    <!--Restore original apk-->
+    <string name="restore_original_apk">Original apks</string>
+    <string name="restore_empty_title">No backup yet</string>
+    <string name="restore_empty_description">The original apk is backed up automatically when an app is patched</string>
+    <string name="restore_backup_info">Version %1$s · %2$s · backed up %3$s</string>
+    <string name="restore_state_missing">Not installed</string>
+    <string name="restore_state_patched">Patched version installed</string>
+    <string name="restore_state_original">Original version installed</string>
+    <string name="restore_install_original">Install original</string>
+    <string name="restore_delete_backup">Delete backup</string>
+    <string name="restore_delete_message">Delete the backup of %1$s?</string>
+    <string name="restore_delete_failed">Failed to delete the backup</string>
+    <string name="restore_handed_over">Handed over to the system installer</string>
+    <string name="restore_install_failed">Failed to start the installation</string>
+    <string name="restore_extract">Extract</string>
+    <string name="restore_extract_done">Extracted to %1$s</string>
+    <string name="restore_extract_failed">Failed to extract the backup</string>
+    <string name="restore_cancel">Cancel</string>
+
+    <!--Modules / patched apps management-->
+    <string name="home_modules">Modules</string>
+    <string name="home_patched_apps">Apps</string>
+    <string name="module_manager_title">Modules</string>
+    <string name="module_manager_count">%1$d installed modules</string>
+    <string name="module_manager_empty_title">No modules found</string>
+    <string name="module_manager_empty_description">Xposed / LSPatch modules installed on this device will be listed here</string>
+    <string name="module_manager_type_legacy">Legacy module</string>
+    <string name="module_manager_type_api">targetApiVersion %1$s</string>
+    <string name="patched_apps_title">Apps</string>
+    <string name="patched_apps_count">%1$d patched apps</string>
+    <string name="patched_apps_empty_title">No patched apps</string>
+    <string name="patched_apps_empty_description">Apps patched by YTP will be listed here</string>
+    <string name="patched_apps_state">Patched</string>
+    <string name="patched_apps_extract_original">Extract original apk</string>
+    <string name="patched_apps_repatch">Re-patch</string>
+    <string name="patch_repatch_no_backup">No original apk backup available</string>
+    <string name="patched_apps_no_backup">No original apk backed up</string>
+    <!--Module management actions-->
+    <string name="module_action_more">More actions</string>
+    <string name="module_action_open">Open module</string>
+    <string name="module_action_app_info">App info</string>
+    <string name="module_action_export">Export APK</string>
+    <string name="module_action_uninstall">Uninstall</string>
+    <string name="module_uninstall_title">Uninstall %1$s?</string>
+    <string name="module_uninstall_message">The module will be removed from the device. Apps that already embed a copy of it are not affected.</string>
+    <string name="module_export_success">Exported %1$s</string>
+    <string name="module_export_failed">Failed to export the module</string>
+</resources>

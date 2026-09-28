@@ -1,0 +1,35 @@
+[versions]
+agp = "8.13.1"
+kotlin = "2.2.21"
+nav = "2.9.6"
+ktfmt = "0.25.0"
+foundation = "1.10.0"
+libxposed = "102.0.0"
+libxposedLint = "1.0.0"
+
+[plugins]
+agp-lib = { id = "com.android.library", version.ref = "agp" }
+agp-app = { id = "com.android.application", version.ref = "agp" }
+kotlin = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+nav-safeargs = { id = "androidx.navigation.safeargs", version.ref = "nav" }
+ktfmt = { id = "com.ncorti.ktfmt.gradle", version.ref = "ktfmt" }
+lsplugin-cmaker = { id = "org.lsposed.lsplugin.cmaker", version = "1.2" }
+lsplugin-jgit = { id = "org.lsposed.lsplugin.jgit", version = "1.1" }
+dokka = { id = "org.jetbrains.dokka", version = "2.2.0" }
+dokka-javadoc = { id = "org.jetbrains.dokka-javadoc", version = "2.2.0" }
+
+[libraries]
+rikkax-parcelablelist = { module = "dev.rikka.rikkax.parcelablelist:parcelablelist", version = "2.0.1" }
+
+libxposedApi = { module = "io.github.libxposed:api", version.ref = "libxposed" }
+libxposedService = { module = "io.github.libxposed:service", version.ref = "libxposed" }
+libxposedInterface = { module = "io.github.libxposed:interface", version.ref = "libxposed" }
+libxposedLint = { module = "io.github.libxposed:lint", version.ref = "libxposedLint" }
+
+androidx-annotation = { module = "androidx.annotation:annotation", version = "1.9.1" }
+androidx-preference = { module = "androidx.preference:preference", version = "1.2.1" }
+appiconloader = { module = "me.zhanghai.android.appiconloader:appiconloader", version = "1.5.0" }
+material = { module = "com.google.android.material:material", version = "1.12.0" }
+gson = { module = "com.google.code.gson:gson", version = "2.13.2" }
+hiddenapibypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version = "6.1" }
+androidx-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "foundation" }

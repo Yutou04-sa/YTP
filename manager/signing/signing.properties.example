@@ -1,0 +1,25 @@
+# Copy this file to signing.properties and fill in your own keystore.
+#
+#   KEYSTORE_FILE     path to your keystore, relative to the repository root
+#   KEYSTORE_PASSWORD store password
+#   KEY_ALIAS         key alias inside the store
+#   KEY_PASSWORD      key password
+#
+# The keystore may be JKS or PKCS12 (the Android Gradle Plugin picks the type
+# automatically). Generate a throw-away one for local builds with:
+#
+#   keytool -genkeypair -alias ytp -keyalg RSA -keysize 2048 -validity 36500 \
+#           -dname "CN=YTP, OU=YTP, O=YTP, C=CN" \
+#           -keystore manager/signing/local.jks -storepass changeit -keypass changeit
+#
+# The file is read as ISO-8859-1 (java.util.Properties), so a non-ASCII alias
+# has to be written with \\uXXXX escapes, e.g. the alias 鱼子 becomes:
+#
+#   KEY_ALIAS=\u9c7c\u5b50
+#
+# signing.properties itself is git-ignored: only this example is published.
+
+KEYSTORE_FILE=manager/signing/local.jks
+KEYSTORE_PASSWORD=changeit
+KEY_ALIAS=ytp
+KEY_PASSWORD=changeit

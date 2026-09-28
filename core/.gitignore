@@ -1,0 +1,11 @@
+.project
+.settings
+.cache
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+build
+/captures
+bin/

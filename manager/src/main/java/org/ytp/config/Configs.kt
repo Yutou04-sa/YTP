@@ -1,0 +1,160 @@
+package org.ytp.config
+
+import org.ytp.ui.util.getValue
+import org.ytp.ui.util.setValue
+
+object Configs {
+
+    private const val PREFS_KEYSTORE_NAME= "keystore_name"
+    private const val PREFS_KEYSTORE_PASSWORD = "keystore_password"
+    private const val PREFS_KEYSTORE_ALIAS = "keystore_alias"
+    private const val PREFS_KEYSTORE_ALIAS_PASSWORD = "keystore_alias_password"
+    private const val PREFS_STORAGE_DIRECTORY = "storage_directory"
+    private const val PREFS_DETAIL_PATCH_LOGS = "detail_patch_logs"
+    private const val PREFS_PRIMARY_COLOR = "primary_color"
+    private const val PREFS_THEME_VERSION = "theme_version"
+    private const val PREFS_BACKGROUND_IMAGE = "background_image"
+    private const val PREFS_SURFACE_ALPHA = "surface_alpha"
+
+    /** 初音未来主题的默认主色（初音青）。 */
+    const val DefaultPrimaryColor = 0xFF39C5BB
+
+    /** 卡片等前景表面的默认不透明度（仅在设置了自定义背景图时生效）。 */
+    const val DefaultSurfaceAlpha = 0.8f
+
+    /** 不透明度滑块的下限，再低文字就没法和底图区分了。 */
+    const val MinSurfaceAlpha = 0.2f
+
+    /** 配色方案版本，用来把旧版的蓝色主题升级到初音主题。 */
+    private const val THEME_VERSION = 2
+
+    private const val UPDATE_NEVER = "update_never"
+
+    var keyStorePassword by org.ytp.ui.util.delegateStateOf(
+        org.ytp.lspApp.prefs.getString(
+            PREFS_KEYSTORE_PASSWORD,
+            org.ytp.share.Constants.KEY_STORE_PASSWORD
+        )!!
+    ) {
+        org.ytp.lspApp.prefs.edit().putString(PREFS_KEYSTORE_PASSWORD, it)
+            .apply()
+    }
+
+    var keyStoreAlias by org.ytp.ui.util.delegateStateOf(
+        org.ytp.lspApp.prefs.getString(
+            PREFS_KEYSTORE_ALIAS,
+            org.ytp.share.Constants.KEY_STORE_ALIAS
+        )!!
+    ) {
+        org.ytp.lspApp.prefs.edit().putString(PREFS_KEYSTORE_ALIAS, it).apply()
+    }
+
+    var keyStoreAliasPassword by org.ytp.ui.util.delegateStateOf(
+        org.ytp.lspApp.prefs.getString(PREFS_KEYSTORE_ALIAS_PASSWORD, org.ytp.share.Constants.KEY_STORE_ALIAS_PASSWORD)!!
+    ) {
+        org.ytp.lspApp.prefs.edit().putString(PREFS_KEYSTORE_ALIAS_PASSWORD, it)
+            .apply()
+    }
+
+    var storageDirectory by org.ytp.ui.util.delegateStateOf(
+        org.ytp.lspApp.prefs.getString(
+            PREFS_STORAGE_DIRECTORY,
+            null
+        )
+    ) {
+        org.ytp.lspApp.prefs.edit().putString(PREFS_STORAGE_DIRECTORY, it)
+            .apply()
+    }
+
+    var detailPatchLogs by org.ytp.ui.util.delegateStateOf(
+        org.ytp.lspApp.prefs.getBoolean(
+            PREFS_DETAIL_PATCH_LOGS,
+            true
+        )
+    ) {
+        org.ytp.lspApp.prefs.edit().putBoolean(PREFS_DETAIL_PATCH_LOGS, it)
+            .apply()
+    }
+
+    var primaryColor by org.ytp.ui.util.delegateStateOf(
+        org.ytp.lspApp.prefs.getLong(PREFS_PRIMARY_COLOR, DefaultPrimaryColor)
+    ) {
+        org.ytp.lspApp.prefs.edit().putLong(PREFS_PRIMARY_COLOR, it).apply()
+    }
+
+    var keyStoreName by org.ytp.ui.util.delegateStateOf(
+        org.ytp.lspApp.prefs.getString(
+            PREFS_KEYSTORE_NAME,
+            org.ytp.share.Constants.KEY_STORE_ALIAS
+        )!!
+    ) {
+        org.ytp.lspApp.prefs.edit().putString(PREFS_KEYSTORE_NAME, it)
+            .apply()
+    }
+
+    /**
+     * 自定义页面背景图在应用私有目录里的绝对路径，空字符串表示使用默认纯色背景。
+     *
+     * 每次替换都会换一个新文件名，这样路径本身的变化就能触发界面刷新。
+     */
+    var backgroundImage by org.ytp.ui.util.delegateStateOf(
+        org.ytp.lspApp.prefs.getString(PREFS_BACKGROUND_IMAGE, "")!!
+    ) {
+        org.ytp.lspApp.prefs.edit().putString(PREFS_BACKGROUND_IMAGE, it).apply()
+    }
+
+    /** 应用一张新的背景图，并删掉上一张留下的文件。 */
+    fun applyBackgroundImage(path: String) {
+        val previous = backgroundImage
+        backgroundImage = path
+        if (previous.isNotEmpty() && previous != path) {
+            runCatching { java.io.File(previous).delete() }
+        }
+    }
+
+    /** 恢复默认背景，并删掉自定义背景图文件。 */
+    fun clearBackgroundImage() {
+        val previous = backgroundImage
+        backgroundImage = ""
+        if (previous.isNotEmpty()) {
+            runCatching { java.io.File(previous).delete() }
+        }
+    }
+
+    /**
+     * 卡片等前景表面的不透明度，只有设置了自定义背景图时才会被用上。
+     *
+     * 1.0 = 卡片完全不透明（底图只在卡片之间露出来）；调小后卡片半透明、底图会透出来。
+     * 取值下限见 [MinSurfaceAlpha]。
+     */
+    var surfaceAlpha by org.ytp.ui.util.delegateStateOf(
+        org.ytp.lspApp.prefs.getFloat(PREFS_SURFACE_ALPHA, DefaultSurfaceAlpha)
+    ) {
+        org.ytp.lspApp.prefs.edit().putFloat(PREFS_SURFACE_ALPHA, it).apply()
+    }
+
+    var updateNever by org.ytp.ui.util.delegateStateOf(
+        org.ytp.lspApp.prefs.getInt(
+            UPDATE_NEVER,
+            0
+        )!!
+    ) {
+        org.ytp.lspApp.prefs.edit().putInt(UPDATE_NEVER, it)
+            .apply()
+    }
+
+    /**
+     * 旧版本升级到初音主题时统一重置一次主色。
+     *
+     * 只对从未迁移过的安装生效，之后调色盘里的选择都会被保留。
+     * 需要在读取 [primaryColor] 之前调用。
+     */
+    fun migrateTheme() {
+        val prefs = org.ytp.lspApp.prefs
+        if (prefs.getInt(PREFS_THEME_VERSION, 0) >= THEME_VERSION) return
+        prefs.edit()
+            .putLong(PREFS_PRIMARY_COLOR, DefaultPrimaryColor)
+            .putInt(PREFS_THEME_VERSION, THEME_VERSION)
+            .apply()
+    }
+}
