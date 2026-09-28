@@ -54,6 +54,12 @@ For stable releases, please go to [Github Releases page](https://github.com/Yuto
   is built with CMake), plus `local.properties` → `sdk.dir`. The Gradle wrapper pins Gradle 9.4.1, so
   the first build downloads the toolchain it needs.
 
+  GitHub Actions (`.github/workflows/android.yml`) builds the same release APK on every push and, for
+  a `v*` tag, attaches it to a release whose version is the tag (`git tag v1.0 && git push origin v1.0`).
+  The workflow signs that APK when the repository defines the `SIGNING_KEYSTORE_BASE64`,
+  `SIGNING_STORE_PASSWORD` and `SIGNING_KEY_PASSWORD` secrets; a fork without them still builds and
+  publishes an unsigned APK.
+
 ## Changes in this fork
 
 + The original APK(s) are copied to the manager's private storage **before** an app is patched.
