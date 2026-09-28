@@ -50,6 +50,22 @@ jobs:
           # preinstalled cmake is acceptable if this exact package is unavailable.
           sdkmanager --install "cmake;3.31.6" || echo "::warning::cmake;3.31.6 was not installed by sdkmanager"
 
+      - name: Upgrade Ninja (C++20 modules need Ninja >= 1.11)
+        # The Android SDK's cmake package ships an old ninja (1.10.2 on the runner) and AGP
+        # passes it explicitly as CMAKE_MAKE_PROGRAM, so putting a newer ninja on PATH is not
+        # enough: lsplant / dex_builder use C++20 modules, which CMake refuses to generate
+        # with Ninja < 1.11. Overwrite the bundled binary in every installed cmake package.
+        run: |
+          curl -sSLo ninja.zip https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-linux.zip
+          unzip -q ninja.zip
+          chmod +x ninja
+          sudo cp ninja /usr/local/bin/ninja
+          for d in "$ANDROID_HOME"/cmake/*/bin; do
+            if [ -d "$d" ]; then sudo cp ninja "$d/ninja"; fi
+          done
+          ninja --version
+          "$ANDROID_HOME"/cmake/*/bin/ninja --version
+
       - name: Build release APK
         run: ./gradlew :manager:buildRelease --console=plain --stacktrace
 
