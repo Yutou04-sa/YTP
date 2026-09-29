@@ -1,9 +1,9 @@
 name: 安卓 CI
 
 # 每次 push / PR 都构建管理器 APK。
-# 推送版本标签（例如 `git tag v2.2.0 && git push ytp v2.2.0`）会以该标签发布一个 GitHub Release。
-# 应用自身的 versionName/versionCode 定义在 gradle/version.properties 中，若标签与其中的
-# `verName` 不一致，发布步骤会直接失败。
+# 推送版本标签（例如 `git tag v2.0 && git push ytp v2.0`）会以该标签发布一个 GitHub Release。
+# 应用自身的 versionName/versionCode 定义在 gradle/version.properties 中，标签只是发布用的
+# 标记，两者可以不同：不一致时发布步骤只给出 warning，并把标签与包内版本号一起写进说明。
 
 on:
   push:
