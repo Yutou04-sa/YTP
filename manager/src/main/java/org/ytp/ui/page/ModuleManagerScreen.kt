@@ -1,11 +1,9 @@
 package org.ytp.ui.page
 
-import android.app.Activity
-import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.util.Log
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Extension
-import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInNew
@@ -58,7 +55,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.ramcosta.composedestinations.annotation.Destination
@@ -77,11 +73,8 @@ import org.ytp.ui.theme.YtpColors
 import org.ytp.ui.util.LocalSnackbarHost
 import org.ytp.ui.util.uninstallApk
 import org.ytp.util.LSPPackageManager
-import java.io.File
-import java.io.IOException
 
 private const val TAG = "ModuleManager"
-private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
 
 private data class ModuleItem(
     val app: LSPPackageManager.AppInfo,
@@ -91,8 +84,8 @@ private data class ModuleItem(
 
 /**
  * Lists the modules (Xposed / LSPatch) installed on the device and offers the operations that can
- * be performed from the manager: opening the module, its app info page, exporting and uninstalling
- * it. Enabling a module for a patched app is still handled inside the patched app itself.
+ * be performed from the manager: opening the module, its app info page and uninstalling it.
+ * Enabling a module for a patched app is still handled inside the patched app itself.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Destination
@@ -105,30 +98,7 @@ fun ModuleManagerScreen(navigator: DestinationsNavigator) {
     var items by remember { mutableStateOf<List<ModuleItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var refreshKey by remember { mutableIntStateOf(0) }
-    var pendingExport by remember { mutableStateOf<ModuleItem?>(null) }
     var pendingUninstall by remember { mutableStateOf<ModuleItem?>(null) }
-
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val item = pendingExport
-        pendingExport = null
-        val treeUri = if (result.resultCode == Activity.RESULT_OK) result.data?.data else null
-        if (item == null || treeUri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val message = withContext(Dispatchers.IO) {
-                runCatching { exportModuleApk(context, File(item.app.app.sourceDir), treeUri) }
-                    .fold(
-                        onSuccess = { name -> context.getString(R.string.module_export_success, name) },
-                        onFailure = { throwable ->
-                            Log.w(TAG, "Failed to export ${item.app.app.packageName}", throwable)
-                            context.getString(R.string.module_export_failed)
-                        }
-                    )
-            }
-            snackbarHost.showSnackbar(message)
-        }
-    }
 
     // Coming back to this screen (e.g. after the system uninstall dialog or a module update)
     // should always show fresh data.
@@ -249,11 +219,32 @@ fun ModuleManagerScreen(navigator: DestinationsNavigator) {
                                     ?.let { intent -> runCatching { context.startActivity(intent) } }
                             },
                             onAppInfo = {
-                                LSPPackageManager
-                                    .getSettingsIntent(item.app.app.packageName)
-                                    ?.let { intent -> runCatching { context.startActivity(intent) } }
+                                val packageName = item.app.app.packageName
+                                // 优先模块自己声明的设置页，其次系统「应用信息」页（任何已安装应用都可用），
+                                // 最后才是启动页；三条都失败时给出提示，不再静默无反应。
+                                val candidates = listOfNotNull(
+                                    LSPPackageManager.getSettingsIntent(packageName),
+                                    Intent(
+                                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                        Uri.fromParts("package", packageName, null)
+                                    ),
+                                    LSPPackageManager.getLaunchIntentForPackage(packageName)
+                                )
+                                val opened = candidates.any { intent ->
+                                    runCatching { context.startActivity(intent) }.isSuccess
+                                }
+                                if (!opened) {
+                                    Log.w(TAG, "No app info screen available for $packageName")
+                                    scope.launch {
+                                        snackbarHost.showSnackbar(
+                                            context.getString(
+                                                R.string.module_app_info_failed,
+                                                item.app.label
+                                            )
+                                        )
+                                    }
+                                }
                             },
-                            onExport = { pendingExport = item },
                             onUninstall = { pendingUninstall = item }
                         )
                     }
@@ -263,29 +254,12 @@ fun ModuleManagerScreen(navigator: DestinationsNavigator) {
     }
 }
 
-/** Copies the apk of a module into the directory the user picked. */
-private fun exportModuleApk(context: Context, apkFile: File, treeUri: Uri): String {
-    val root = DocumentFile.fromTreeUri(context, treeUri)
-        ?: throw IOException("DocumentFile is null")
-    val name = apkFile.name.ifBlank { "module.apk" }
-    val target = root.findFile(name)?.takeIf { it.isFile }
-        ?: root.createFile(APK_MIME_TYPE, name)
-        ?: throw IOException("Cannot create $name")
-    val output = context.contentResolver.openOutputStream(target.uri)
-        ?: throw IOException("OutputStream is null")
-    apkFile.inputStream().use { input ->
-        output.use { stream -> input.copyTo(stream) }
-    }
-    return name
-}
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ModuleCard(
     item: ModuleItem,
     onOpen: () -> Unit,
     onAppInfo: () -> Unit,
-    onExport: () -> Unit,
     onUninstall: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -377,16 +351,6 @@ private fun ModuleCard(
                         onClick = {
                             menuExpanded = false
                             onAppInfo()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.module_action_export)) },
-                        leadingIcon = {
-                            Icon(Icons.Outlined.FileDownload, contentDescription = null)
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onExport()
                         }
                     )
                     DropdownMenuItem(

@@ -169,6 +169,7 @@
     <string name="patched_apps_count">%1$d patched apps</string>
     <string name="patched_apps_empty_title">No patched apps</string>
     <string name="patched_apps_empty_description">Apps patched by YTP will be listed here</string>
+    <string name="patched_apps_restore_hint">View and restore the apks backed up before patching</string>
     <string name="patched_apps_state">Patched</string>
     <string name="patched_apps_extract_original">Extract original apk</string>
     <string name="patched_apps_repatch">Re-patch</string>
@@ -178,10 +179,8 @@
     <string name="module_action_more">More actions</string>
     <string name="module_action_open">Open module</string>
     <string name="module_action_app_info">App info</string>
-    <string name="module_action_export">Export APK</string>
     <string name="module_action_uninstall">Uninstall</string>
     <string name="module_uninstall_title">Uninstall %1$s?</string>
     <string name="module_uninstall_message">The module will be removed from the device. Apps that already embed a copy of it are not affected.</string>
-    <string name="module_export_success">Exported %1$s</string>
-    <string name="module_export_failed">Failed to export the module</string>
+    <string name="module_app_info_failed">Cannot open the app info page of %1$s</string>
 </resources>

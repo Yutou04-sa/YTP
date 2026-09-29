@@ -166,6 +166,7 @@
     <string name="patched_apps_count">共 %1$d 个已修补应用</string>
     <string name="patched_apps_empty_title">还没有已修补的应用</string>
     <string name="patched_apps_empty_description">用 YTP 修补成功的应用会显示在这里</string>
+    <string name="patched_apps_restore_hint">查看并还原打补丁前备份的原包</string>
     <string name="patched_apps_state">已修补</string>
     <string name="patched_apps_extract_original">提取原包</string>
     <string name="patched_apps_repatch">重新修补</string>
@@ -175,10 +176,8 @@
     <string name="module_action_more">更多操作</string>
     <string name="module_action_open">打开模块</string>
     <string name="module_action_app_info">应用信息</string>
-    <string name="module_action_export">导出APK</string>
     <string name="module_action_uninstall">卸载</string>
     <string name="module_uninstall_title">卸载 %1$s？</string>
     <string name="module_uninstall_message">该模块将从设备上移除，已内嵌该模块的已修补应用不受影响。</string>
-    <string name="module_export_success">已导出 %1$s</string>
-    <string name="module_export_failed">导出模块失败</string>
+    <string name="module_app_info_failed">无法打开 %1$s 的应用信息页</string>
 </resources>

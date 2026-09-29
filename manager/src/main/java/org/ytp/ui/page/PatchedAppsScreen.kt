@@ -5,6 +5,9 @@ import android.content.Intent
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,13 +18,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.VerifiedUser
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -31,7 +39,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -45,6 +52,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
@@ -209,74 +217,143 @@ fun PatchedAppsScreen(navigator: DestinationsNavigator) {
             )
         }
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when {
-                loading -> CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = YtpColors.Primary
+            // 「原包」入口常显：加载中、列表为空、有内容时都能进入备份/还原页
+            RestoreOriginalEntry(
+                onClick = { navigator.navigate(RestoreScreenDestination) },
+                modifier = Modifier.padding(
+                    start = PageHorizontalPadding,
+                    end = PageHorizontalPadding,
+                    top = PageVerticalSpacing
                 )
+            )
 
-                items.isEmpty() -> YtpEmptyState(
-                    title = stringResource(R.string.patched_apps_empty_title),
-                    modifier = Modifier.align(Alignment.Center),
-                    icon = Icons.Outlined.VerifiedUser,
-                    supportingText = stringResource(R.string.patched_apps_empty_description)
-                )
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    loading -> CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = YtpColors.Primary
+                    )
 
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        horizontal = PageHorizontalPadding,
-                        vertical = PageVerticalSpacing
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                    items.isEmpty() -> YtpEmptyState(
+                        title = stringResource(R.string.patched_apps_empty_title),
+                        modifier = Modifier.align(Alignment.Center),
+                        icon = Icons.Outlined.VerifiedUser,
+                        supportingText = stringResource(R.string.patched_apps_empty_description)
+                    )
+
+                    else -> LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            horizontal = PageHorizontalPadding,
+                            vertical = PageVerticalSpacing
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        item {
                             Text(
                                 text = stringResource(R.string.patched_apps_count, items.size),
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.fillMaxWidth(),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = YtpColors.TextSecondary
                             )
-                            TextButton(onClick = { navigator.navigate(RestoreScreenDestination) }) {
-                                Text(stringResource(R.string.restore_original_apk))
-                            }
                         }
-                    }
-                    items(items, key = { it.app.app.packageName }) { item ->
-                        PatchedAppCard(
-                            item = item,
-                            onRepatch = {
-                                val packageName = item.app.app.packageName
-                                if (Configs.storageDirectory == null) {
-                                    pendingRepatch = packageName
-                                    storageLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
-                                } else {
-                                    navigator.navigate(
-                                        NewPatchScreenDestination(
-                                            id = ACTION_BACKUP,
-                                            backupPackage = packageName
+                        items(items, key = { it.app.app.packageName }) { item ->
+                            PatchedAppCard(
+                                item = item,
+                                onRepatch = {
+                                    val packageName = item.app.app.packageName
+                                    if (Configs.storageDirectory == null) {
+                                        pendingRepatch = packageName
+                                        storageLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+                                    } else {
+                                        navigator.navigate(
+                                            NewPatchScreenDestination(
+                                                id = ACTION_BACKUP,
+                                                backupPackage = packageName
+                                            )
                                         )
-                                    )
+                                    }
+                                },
+                                onExtract = {
+                                    val backup = item.backup ?: return@PatchedAppCard
+                                    pendingExtract = backup
+                                    extractLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
                                 }
-                            },
-                            onExtract = {
-                                val backup = item.backup ?: return@PatchedAppCard
-                                pendingExtract = backup
-                                extractLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/** 「原包」入口：整行卡片，任何列表状态下都可见，点击进入原包备份/还原页。 */
+@Composable
+private fun RestoreOriginalEntry(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(20.dp)
+    val iconShape = RoundedCornerShape(14.dp)
+    val accent = YtpColors.Primary
+
+    Card(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = YtpColors.Surface),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.30f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(iconShape)
+                    .background(accent.copy(alpha = 0.14f))
+                    .border(1.dp, YtpColors.IconButtonBorder, iconShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.FileDownload,
+                    contentDescription = null,
+                    tint = accent
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.restore_original_apk),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = YtpColors.TextPrimary
+                )
+                Text(
+                    text = stringResource(R.string.patched_apps_restore_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = YtpColors.TextSecondary
+                )
+            }
+
+            Icon(
+                imageVector = Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = YtpColors.TextSecondary
+            )
         }
     }
 }

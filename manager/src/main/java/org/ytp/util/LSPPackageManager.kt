@@ -295,13 +295,19 @@ object LSPPackageManager {
             )
     }
 
+    /**
+     * 模块自己声明的设置页（`de.robv.android.xposed.category.MODULE_SETTINGS`）；没有就返回 null。
+     *
+     * 旧实现找不到设置页时回退到启动页，于是「应用信息」与「打开」变成同一个动作，
+     * 而没有启动页的模块点了完全没反应。回退交给调用方处理（系统「应用信息」页总是可用）。
+     */
     fun getSettingsIntent(packageName: String): Intent? {
         val intentToResolve = Intent(Intent.ACTION_MAIN)
         intentToResolve.addCategory(SETTINGS_CATEGORY)
         intentToResolve.setPackage(packageName)
         val ris = lspApp.packageManager.queryIntentActivities(intentToResolve, 0)
 
-        if (ris.size <= 0) return getLaunchIntentForPackage(packageName)
+        if (ris.size <= 0) return null
 
         return Intent(intentToResolve)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
