@@ -8,3 +8,11 @@ updates:
       maven:
         patterns:
           - "*"
+    ignore:
+      # Gradle wrapper 随 AGP / Kotlin 版本一起手动升级：自动升到 9.8.0 会让 CI 构建失败
+      # （见已关闭的 PR #2）。依赖库的更新不受影响，仍会照常提 PR。
+      - dependency-name: "gradle"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
