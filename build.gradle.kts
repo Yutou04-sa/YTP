@@ -13,13 +13,13 @@ plugins {
 // sync from https://github.com/JingMartix/LSPosed/blob/master/build.gradle.kts
 val defaultManagerPackageName by extra("org.ytp")
 val apiCode by extra(102)
-// Version is defined once in gradle/version.properties (also read by the standalone core build).
+// 版本号只在一处定义：gradle/version.properties（独立构建 core 时也读同一个文件）。
 val versionProps = java.util.Properties().apply {
     file("gradle/version.properties").inputStream().use { load(it) }
 }
 val verCode by extra(versionProps.getProperty("verCode").trim().toInt())
 val verName by extra(versionProps.getProperty("verName").trim())
-// The embedded framework (core) ships with the manager, so it uses the same version.
+// 内嵌的框架（core）随管理器一起发布，因此与管理器使用同一套版本号。
 val coreVerCode by extra(verCode)
 val coreVerName by extra(verName)
 val androidMinSdkVersion by extra(28)
@@ -55,9 +55,8 @@ tasks.register("build2Release") {
 
 fun Project.configureBaseExtension() {
     extensions.findByType(BaseExtension::class)?.run {
-        // NOTE: the legacy Int overload maps 37 -> "android-37", but an SDK that installs the
-        // minor-version platform registers it as "platforms;android-37.0", so pass the full
-        // platform hash string here.
+        // 说明：旧的 Int 重载会把 37 映射成 "android-37"，而安装了小版本平台的 SDK 实际注册名是
+        // "platforms;android-37.0"，所以这里传完整的平台名字符串。
         compileSdkVersion("android-37.0")
         ndkVersion = androidCompileNdkVersion
         buildToolsVersion = androidBuildToolsVersion
@@ -88,10 +87,9 @@ fun Project.configureBaseExtension() {
                     arguments += "-DEXTERNAL_ROOT=${File(rootDir.absolutePath, "core/external")}"
                     arguments += "-DCORE_ROOT=${File(rootDir.absolutePath,
                         "core/core/src/main/jni")}"
-                    // Every ABI the framework ships for is built by default, because the patcher
-                    // copies these libraries into the target app. Pass -PytpAbis=arm64-v8a (comma
-                    // separated for several) to build only what a test device needs: the native
-                    // build time scales with the number of ABIs.
+                    // 框架支持的全部 ABI 默认都会构建，因为打补丁时会把这些库拷进目标应用。
+                    // 只想给测试设备构建时传 -PytpAbis=arm64-v8a（多种用逗号分隔）：原生构建
+                    // 耗时随 ABI 数量增长。
                     val abis = (this@configureBaseExtension.findProperty("ytpAbis") as String?)
                         ?.split(',')
                         ?.map { it.trim() }

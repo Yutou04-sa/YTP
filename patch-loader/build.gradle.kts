@@ -68,9 +68,8 @@ androidComponents.onVariants { variant ->
         into("${rootProject.projectDir}/out/assets/${variant.name}/ytp")
     }
 
-    // Sync, not Copy: the destination is re-created on every run, so libraries for an ABI that is not
-    // part of this build (a narrowed -PytpAbis run, or a stale lib from an older build) can never leak
-    // into the APK through out/assets.
+    // 这里用 Sync 而不是 Copy：每次都会重建目标目录，所以不属于本次构建的 ABI 库
+    // （例如用 -PytpAbis 收窄了 ABI，或来自更早构建的陈旧 so）绝不可能经由 out/assets 混进 APK。
     val copySoTask = tasks.register<Sync>("copySo$variantCapped") {
         dependsOn("assemble$variantCapped")
         dependsOn("strip${variantCapped}DebugSymbols")

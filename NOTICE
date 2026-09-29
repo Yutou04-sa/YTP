@@ -1,86 +1,101 @@
-Third-party notices for YTP
-===========================
+YTP 第三方组件声明
+==================
 
-YTP is a fork of HKP <https://github.com/wyx176/HKP> and is distributed under the GNU
-General Public License v3.0 — see `LICENSE` (the vendored core carries its own copy in
-`core/LICENSE`). The components listed below are bundled in this source tree, linked into
-the build, or shipped inside the released APK, and each one keeps its own terms. Where a
-component ships a license text, that text is authoritative and sits next to its sources;
-this file is a summary, not a replacement for it.
+一、本项目的来源、协议与修改声明（请先读这段）
+---------------------------------------------
 
-If you believe a component is listed wrongly or is redistributed here without a right you
-hold, please open an issue at <https://github.com/Yutou04-sa/YTP/issues> and it will be
-corrected or removed.
+YTP 是 **LSPatch 的二次修改版本**，经由 HKP（HkPatch）而来，整体以 **GNU General Public
+License v3.0** 分发 —— 见 `LICENSE`（摊平的核心自带一份，在 `core/LICENSE`）。来源链：
 
+  1. **LSPosed** <https://github.com/LSPosed/LSPosed>（活跃分支
+     <https://github.com/JingMatrix/LSPosed>）—— 框架核心（hook、服务、Xposed API 桥）。
+     **GPL-3.0**。
+  2. **LSPatch** <https://github.com/LSPosed/LSPatch>（原作者 canyie 与 LSPosed 开发者；活跃分支
+     <https://github.com/JingMatrix/LSPatch>）—— 免 Root 的补丁方案：把框架注入目标 APK 的思路、
+     补丁管线与管理器骨架。**GPL-3.0**（其仓库声明的许可证与本项目一致）。
+  3. **HKP / HkPatch** <https://github.com/wyx176/HKP> —— 本仓库**直接 fork** 的源码树：
+     `patch/`、`patch-loader/`、`meta-loader/`、`share/`、`manager/`、`core/` 都由它摊平而来
+     （上游包名为 `org.hkp`）。**GPL-3.0**（`LICENSE` 来自该仓库）。
+  4. **YTP**（本仓库）—— 在上面这棵树上的修改版本。
 
-1. Vendored sources (rootless Xposed core, `core/`)
---------------------------------------------------
+**修改声明（GPL-3.0 第 5(a) 条）**：本仓库是一个被**修改过**的版本，不是上述任何上游的原版。
+修改自 **2026-09-29** 起由 YTP 维护者进行，包括但不限于：
 
-  * `core/` — the rootless Xposed framework core (LSPosed API, bridges, services),
-    derived from LSPosed <https://github.com/JingMatrix/LSPosed> and the Xpatch fork
-    <https://github.com/WindySha/Xpatch>. **GPL-3.0** (`core/LICENSE`).
-  * `core/external/lsplant` — LSPlant, the ART hooking library (LSPosed).
-    **LGPL-3.0** (`core/external/lsplant/LICENSE`).
-  * `core/external/lsplt` — LSPlt, the native PLT hooking library.
-    **LGPL-3.0**.
-  * `core/external/dobby` — Dobby, the inline hooking engine.
-    **Apache-2.0**.
-  * `core/external/fmt` — {fmt}, the formatting library. **MIT**.
-  * `core/external/xz-embedded` — XZ Embedded. Permissive / public-domain-style terms,
-    see its own `COPYING`.
-  * `core/external/apache/commons-lang` — Apache Commons Lang. **Apache-2.0**
-    (`LICENSE.txt`, `NOTICE.txt` inside it).
-  * `core/external/axml/manifest-editor` — ManifestEditor
-    <https://github.com/WindySha/ManifestEditor>, a fork of Sable/axml, also used by
-    Xpatch. **Upstream ships no license file.** It is included unmodified with its
-    original file headers. Its demo signing keystore
-    (`lib/src/main/assets/new_keystore`, a JKS) is still in that tree; this build never
-    reads it (only `lib/src/main/java` is compiled), and it is upstream's file, not ours.
-    If you own the rights to this code and object to its redistribution here, open an
-    issue and it will be removed.
+  * 包名与命名重命名：`org.hkp` → `org.ytp`，HKP/YTP 相关的类名、资源名与文案；
+  * 把原先作为 git 子模块的 `core`（含 LSPlant / Dobby / axml 等）摊平为普通源码，树中不再有
+    任何子模块；
+  * 管理器（`manager/`）的界面与交互重写（主题、背景图、World Gate、原始安装包管理、已打补丁
+    列表等）；
+  * 补丁管线（`patch/`、`patch-loader/`）与原生/JNI 层的健壮性修复（ABI 资源缺失、过期 dex 名、
+    资源 hook 的异常处理、hook 失败重试等）；
+  * 构建与发布：版本号统一到 `gradle/version.properties`、CI（`.github/workflows/android.yml`）
+    重写、默认构建全部支持的 ABI。
+
+修改内容与日期同时记录在本 README 的“本 fork 的改动”与仓库的 git 提交历史中。上游代码的版权归
+其各自作者所有；本仓库保留上游的许可证文本、文件头与声明。
+
+如果你认为某个组件被错误地列出，或在本仓库中被以你未授权的权利再分发，请到
+<https://github.com/Yutou04-sa/YTP/issues> 提 issue，我们会更正或移除。
 
 
-2. Code decompiled from MT Manager (`patch/src/main/java/bin/`)
----------------------------------------------------------------
+二、随源码树提供的第三方源码（`core/`）
+---------------------------------------
 
-  * `bin/mt/apksign/` (`data/`, `key/` included) — APK Signature Scheme v2/v3 signing:
-    builds the APK Signing Block and inserts it in place.
-  * `bin/zip/` — ZIP reading and writing: `DataMultiplexing` implements the
-    "original-APK data multiplexing" the patch pipeline relies on (a patched APK keeps
-    the untouched original APK inside it, and the entries copied from it share that data
-    area instead of being duplicated), plus streaming signatures and alignment.
-  * `bin/io/` — random-access helpers used by the two packages above.
-
-  Every file in these three packages carries its original `@author Bin` header. They are
-  decompiled from **MT Manager** (MT管理器) <https://mt2.cn>. **We could not find license
-  terms for this code.** It is kept because the patch pipeline depends on it: `bin.zip`
-  is what makes a patched app cost one copy of the original APK instead of two, and
-  `bin.mt.apksign` is the only signer we found that can sign such a multiplexed archive
-  in place — Google's apksig rewrites every entry, which duplicates the multiplexed data
-  and roughly doubles the artefact (measured on a synthetic multiplexed APK:
-  11 983 321 B → 23 725 457 B, against 11 990 608 B when signed by `bin.mt.apksign`).
-  If you own the rights to this code and object to its redistribution here, open an
-  issue and it will be removed.
-
-
-3. Libraries resolved from Maven (bundled into the APKs)
---------------------------------------------------------
-
-  * AndroidX, Jetpack Compose, Kotlin standard library, Room, Guava, Gson,
-    Apache Commons IO, JCommander, apkzlib and apksig (Google), RikkaW HiddenApi and
-    HiddenApiRefinePlugin — **Apache-2.0** (the license text is part of each artifact;
-    for the two Rikka projects see their upstream `LICENSE`).
-  * smali / dexlib2 — **BSD-3-Clause** (Ben Gruver, <https://github.com/google/smali>).
+  * `core/` —— 免 Root Xposed 框架核心（LSPosed API、桥、服务），源自 LSPosed
+    <https://github.com/JingMatrix/LSPosed> 与 Xpatch 分支
+    <https://github.com/WindySha/Xpatch>。**GPL-3.0**（`core/LICENSE`）。
+  * `core/external/lsplant` —— LSPlant，ART hook 库（LSPosed）。**LGPL-3.0**
+    （`core/external/lsplant/LICENSE`）。
+  * `core/external/lsplt` —— LSPlt，native PLT hook 库。**LGPL-3.0**。
+  * `core/external/dobby` —— Dobby，inline hook 引擎。**Apache-2.0**。
+  * `core/external/fmt` —— {fmt}，格式化库。**MIT**。
+  * `core/external/xz-embedded` —— XZ Embedded。宽松/公有领域式条款，见其自带 `COPYING`。
+  * `core/external/apache/commons-lang` —— Apache Commons Lang。**Apache-2.0**（内含
+    `LICENSE.txt`、`NOTICE.txt`）。
+  * `core/external/axml/manifest-editor` —— ManifestEditor
+    <https://github.com/WindySha/ManifestEditor>（LSPosed 侧的维护分支为
+    <https://github.com/JingMatrix/ManifestEditor>），Sable/axml 的 fork，Xpatch 也在用。
+    **上游没有提供任何许可证文件。** 它在本次分发中保持原样，并保留原始文件头。该目录里还带着
+    上游的演示签名密钥库（`lib/src/main/assets/new_keystore`，JKS）；本构建从不读它（只编译
+    `lib/src/main/java`），它是上游的文件、不是我们的。若你拥有该代码的权利并反对在此再分发，
+    请提 issue，我们会移除。
 
 
-4. Assets and artwork
----------------------
+三、反编译自 MT Manager 的代码（`patch/src/main/java/bin/`）
+-----------------------------------------------------------
 
-  * The launcher icon keeps the upstream LSPosed-style artwork (GPL-3.0) with a teal
-    recolour. Every other icon comes from Material's icon set (Apache-2.0). No other
-    third-party artwork is bundled.
-  * `manager/src/main/assets/keystore` is **not** third-party material: it is the
-    maintainer's own release keystore, shipped so that a patched app is signed with the
-    same certificate as the manager. Because it is published here, treat it as a public
-    key and import your own keystore before distributing your own builds — see the
-    "Changes in this fork" section of `README.md`.
+  * `bin/mt/apksign/`（含 `data/`、`key/`）—— APK Signature Scheme v2/v3 签名：构造 APK
+    Signing Block 并原地插入。
+  * `bin/zip/` —— ZIP 读写：`DataMultiplexing` 实现补丁管线所依赖的“原包数据复用”（补丁包里
+    保留一份未被改动的原 APK，从它复制出来的条目共享同一块数据区而不是各存一份），另有流式签名
+    与对齐处理。
+  * `bin/io/` —— 上面两个包使用的随机访问辅助类。
+
+  这三个包中的每个文件都带有其原始 `@author Bin` 文件头，反编译自 **MT Manager**（MT管理器）
+  <https://mt2.cn>。**我们没能找到这段代码的许可证条款。** 保留它的原因是补丁管线依赖它：
+  `bin.zip` 让补丁包的体积是“一份原包”而不是两份，而 `bin.mt.apksign` 是我们找到的唯一能给这种
+  复用包做原地签名的签名器 —— Google 的 apksig 会重写每一个条目，把复用数据复制一遍，产物体积
+  大约翻倍（在一个合成的复用包上实测：11 983 321 B → 23 725 457 B，而 `bin.mt.apksign` 签出来
+  是 11 990 608 B）。若你拥有该代码的权利并反对在此再分发，请提 issue，我们会移除。
+
+  说明：这些文件在上游 HKP 中已经存在（本仓库与 HKP 的 `bin/` 逐字节一致，仅 `bin/zip/
+  DataMultiplexing.java` 有 2 行差异），并非本 fork 引入。
+
+
+四、来自 Maven 的依赖（会被打进 APK）
+-------------------------------------
+
+  * AndroidX、Jetpack Compose、Kotlin 标准库、Room、Guava、Gson、Apache Commons IO、
+    JCommander、apkzlib 与 apksig（Google）、RikkaW HiddenApi 与 HiddenApiRefinePlugin ——
+    **Apache-2.0**（许可证文本随各构件分发；两个 Rikka 项目见其上游 `LICENSE`）。
+  * smali / dexlib2 —— **BSD-3-Clause**（Ben Gruver，<https://github.com/google/smali>）。
+
+
+五、美术资源与密钥库
+-------------------
+
+  * 启动器图标沿用上游的 LSPosed 风格美术资源（GPL-3.0），只做了青绿色替换。其余图标均来自
+    Material 图标集（Apache-2.0）。没有捆绑其他第三方美术资源。
+  * `manager/src/main/assets/keystore` **不是**第三方素材，而是维护者自己的发布密钥库，随 APK
+    一起分发，目的是让补丁应用与管理器使用同一张证书签名。既然它被公开在仓库里，就请把它当作
+    公开密钥：发布你自己的构建前，请导入你自己的密钥库 —— 见 `README.md` 的“本 fork 的改动”。

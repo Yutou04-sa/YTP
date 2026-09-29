@@ -1,23 +1,23 @@
-# Copy this file to signing.properties and fill in your own keystore.
+# 把本文件复制为 signing.properties，并填入你自己的密钥库。
 #
-#   KEYSTORE_FILE     path to your keystore, relative to the repository root
-#   KEYSTORE_PASSWORD store password
-#   KEY_ALIAS         key alias inside the store
-#   KEY_PASSWORD      key password
+#   KEYSTORE_FILE     你的密钥库路径，相对仓库根目录
+#   KEYSTORE_PASSWORD 密钥库口令（store password）
+#   KEY_ALIAS         密钥库中的别名
+#   KEY_PASSWORD      该别名的密钥口令（key password）
 #
-# The keystore may be JKS or PKCS12 (the Android Gradle Plugin picks the type
-# automatically). Generate a throw-away one for local builds with:
+# 密钥库可以是 JKS 或 PKCS12（Android Gradle Plugin 会自动判断类型）。
+# 本地构建可以这样临时生成一个：
 #
 #   keytool -genkeypair -alias ytp -keyalg RSA -keysize 2048 -validity 36500 \
 #           -dname "CN=YTP, OU=YTP, O=YTP, C=CN" \
 #           -keystore manager/signing/local.jks -storepass changeit -keypass changeit
 #
-# The file is read as ISO-8859-1 (java.util.Properties), so a non-ASCII alias
-# has to be written with \\uXXXX escapes, e.g. the alias 鱼子 becomes:
+# 该文件按 ISO-8859-1 读取（java.util.Properties），因此非 ASCII 别名必须写成 \\uXXXX 转义，
+# 例如别名“鱼子”要写成：
 #
 #   KEY_ALIAS=\u9c7c\u5b50
 #
-# signing.properties itself is git-ignored: only this example is published.
+# signing.properties 本身已被 git 忽略：仓库里只发布这个示例文件。
 
 KEYSTORE_FILE=manager/signing/local.jks
 KEYSTORE_PASSWORD=changeit

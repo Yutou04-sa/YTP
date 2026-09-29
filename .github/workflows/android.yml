@@ -1,9 +1,9 @@
 name: Android CI
 
-# Builds the manager APK on every push/PR.
-# Pushing a version tag (e.g. `git tag v2.2.0 && git push ytp v2.2.0`) publishes a GitHub
-# Release with that tag. The app's own versionName/versionCode live in gradle/version.properties
-# and the release fails if the tag does not match `verName` there.
+# 每次 push / PR 都构建管理器 APK。
+# 推送版本标签（例如 `git tag v2.2.0 && git push ytp v2.2.0`）会以该标签发布一个 GitHub Release。
+# 应用自身的 versionName/versionCode 定义在 gradle/version.properties 中，若标签与其中的
+# `verName` 不一致，发布步骤会直接失败。
 
 on:
   push:
@@ -13,29 +13,27 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # the tag build publishes a release
+  contents: write # 标签构建需要创建 Release
 
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
     env:
-      # Optional signing material. When the repository defines these secrets the APK is
-      # signed with the same key as the local builds; when they are absent (e.g. a fork)
-      # the variables are empty and manager/build.gradle.kts falls back to an unsigned
-      # release, so the workflow keeps working without any setup.
+      # 可选的签名材料。仓库配置了这些 secret 时，APK 会用与本地构建相同的密钥签名；
+      # 没有配置（例如别人 fork 之后）则这些变量为空，manager/build.gradle.kts 会回退为
+      # 未签名发布，因此工作流零配置也能跑通。
       SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
       SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
       SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-      # Optional: SHA-256 of the expected signer certificate. When set together with the
-      # signing secrets the build refuses to publish an apk signed by another key.
+      # 可选：期望的签名证书 SHA-256。与签名 secret 同时设置时，构建会拒绝发布由其他密钥
+      # 签名的 APK。
       SIGNING_CERT_SHA256: ${{ secrets.SIGNING_CERT_SHA256 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          # lsplant derives its own version from git history (latest tag), so a shallow clone
-          # is not enough.
+          # lsplant 会从 git 历史（最近的 tag）推导自身版本号，所以浅克隆不够。
           fetch-depth: 0
 
       - name: Setup Java
@@ -57,19 +55,19 @@ jobs:
             "platforms;android-37.0" \
             "build-tools;37.0.0" \
             "ndk;29.0.13113456"
-          # build.gradle.kts asks for "3.29.8+" and picks the newest installed one, so a
-          # preinstalled cmake is acceptable if this exact package is unavailable.
+          # build.gradle.kts 要求 "3.29.8+" 并会挑已安装的最新版本，所以只要这个确切包拿不到，
+          # 用运行器预装的 cmake 也可以接受。
           sdkmanager --install "cmake;3.31.6" || echo "::warning::cmake;3.31.6 was not installed by sdkmanager"
 
       - name: Upgrade Ninja (C++20 modules need Ninja >= 1.11)
-        # The Android SDK's cmake package ships an old ninja (1.10.2 on the runner) and AGP
-        # passes it explicitly as CMAKE_MAKE_PROGRAM, so putting a newer ninja on PATH is not
-        # enough: lsplant / dex_builder use C++20 modules, which CMake refuses to generate
-        # with Ninja < 1.11. Overwrite the bundled binary in every installed cmake package.
+        # Android SDK 的 cmake 包自带旧版 ninja（运行器上是 1.10.2），而 AGP 会把它作为
+        # CMAKE_MAKE_PROGRAM 显式传给 CMake，所以只把新版 ninja 放到 PATH 里没用：
+        # lsplant / dex_builder 使用 C++20 modules，CMake 在 Ninja < 1.11 时拒绝生成。
+        # 因此直接覆盖每个已安装 cmake 包里的那个二进制。
         run: |
           set -euo pipefail
           curl -sSLo ninja.zip https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-linux.zip
-          # Pinned so a replaced upstream asset cannot inject a binary into the release build.
+          # 固定校验和，防止上游资源被替换后往发布构建里塞二进制。
           echo "6f98805688d19672bd699fbbfa2c2cf0fc054ac3df1f0e6a47664d963d530255  ninja.zip" | sha256sum -c -
           unzip -q ninja.zip
           chmod +x ninja
@@ -81,9 +79,9 @@ jobs:
           "$ANDROID_HOME"/cmake/*/bin/ninja --version
 
       - name: Write signing material
-        # Skipped when the secrets are missing, which leaves the release unsigned.
-        # KEY_ALIAS is the one piece written literally (Java .properties escapes are
-        # read as UTF-8 here, so a raw non-ASCII alias would be a gamble).
+        # 缺少 secret 时整步跳过，release 保持未签名。
+        # KEY_ALIAS 是唯一按字面写入的项（这里的 Java .properties 转义会按 UTF-8 读，
+        # 所以直接写非 ASCII 别名有风险）。
         if: env.SIGNING_KEYSTORE_BASE64 != ''
         run: |
           set -euo pipefail
@@ -101,10 +99,9 @@ jobs:
         run: ./gradlew :manager:buildRelease --console=plain --stacktrace
 
       - name: Verify the apk signature
-        # Never publish an apk whose signer we did not expect: the release is only as trustworthy
-        # as the certificate it is signed with. Set the SIGNING_CERT_SHA256 secret to the expected
-        # "Signer #1 certificate SHA-256 digest" to make the check mandatory. Without signing
-        # secrets the release is unsigned and this step only reports that fact.
+        # 绝不发布签名者不符合预期的 APK：release 的可信度等同于给它签名的证书。
+        # 把 SIGNING_CERT_SHA256 secret 设为期望的 "Signer #1 certificate SHA-256 digest"
+        # 即可让这一步变成强制校验。没有配置签名 secret 时 release 本就未签名，此步只报告该事实。
         run: |
           set -euo pipefail
           apksigner="$ANDROID_HOME/build-tools/37.0.0/apksigner"
@@ -148,8 +145,8 @@ jobs:
             manager/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
-      # Tag build only: attach the APK this run produced. Re-running the workflow
-      # replaces the release instead of appending a second set of assets.
+      # 仅标签构建：附上本次运行产出的 APK。重跑工作流会替换该 Release，
+      # 而不是再追加一套资产。
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -158,9 +155,9 @@ jobs:
         run: |
           set -euo pipefail
           ver="${TAG#v}"
-          # The tag must be the version stored in gradle/version.properties: the app's own
-          # versionName/versionCode come from that file, so a mismatching tag would publish an
-          # apk labelled with a different version than the release.
+          # 标签必须等于 gradle/version.properties 中的版本号：应用自身的
+          # versionName/versionCode 就来自该文件，标签不匹配就会发布一个版本号与 Release
+          # 不一致的 APK。
           fileVer=$(grep -E '^verName=' gradle/version.properties | cut -d= -f2 | tr -d '[:space:]')
           if [ "$ver" != "$fileVer" ]; then
             echo "::error::tag ${TAG} does not match gradle/version.properties (verName=${fileVer})"
@@ -170,5 +167,7 @@ jobs:
           gh release create "$TAG" \
             --latest \
             --title "YTP ${ver}" \
-            --notes "Automatically built by [run ${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})." \
+            --notes "Automatically built by [run ${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}).
+
+          Source code: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} — YTP is a modified version of LSPatch (via HKP/HkPatch), licensed under GPL-3.0." \
             out/release/*.apk out/release/SHA256SUMS.txt
