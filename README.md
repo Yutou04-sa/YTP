@@ -192,4 +192,4 @@
 
 ## 许可证
 
-YTP 以 **GNU General Public License v3（GPL-3）** 授权（http://www.gnu.org/copyleft/gpl.html）。
+YTP 以 **GNU General Public License v3（GPL-3）** 授权（https://www.gnu.org/licenses/gpl-3.0.html）。
