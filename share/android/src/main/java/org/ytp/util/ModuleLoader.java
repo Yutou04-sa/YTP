@@ -116,9 +116,9 @@ public class ModuleLoader {
                 file.legacy = false;
                 readName(apkFile, MODERN_JAVA_INIT, moduleClassNames);
                 readName(apkFile, MODERN_NATIVE_INIT, moduleLibraryNames);
-                // 有些混合型模块带了 module.prop，却仍把 native 入口写在旧的 assets/native_init 里
-                // （例如 dyhelper：libvideo_speed_patch.so）。没有这个回退，moduleLibraryNames 会是空的，
-                // NativeAPI.recordNativeEntrypoint() 就不会登记它，模块的 native_init() 永远不会被调用。
+                // 有些混合型模块带了 module.prop，却仍把 native 入口写在旧的 assets/native_init 里。
+                // 没有这个回退，moduleLibraryNames 会是空的，NativeAPI.recordNativeEntrypoint()
+                // 就不会登记它，模块的 native_init() 永远不会被调用。
                 if (moduleLibraryNames.isEmpty()) {
                     readName(apkFile, LEGACY_NATIVE_INIT, moduleLibraryNames);
                 }
