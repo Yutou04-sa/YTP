@@ -55,9 +55,9 @@ tasks.register("build2Release") {
 
 fun Project.configureBaseExtension() {
     extensions.findByType(BaseExtension::class)?.run {
-        // NOTE(local build fix): the legacy Int overload maps 37 -> "android-37", but the installed
-        // SDK 37 platform is registered as "platforms;android-37.0" (minor-version SDK), so we must
-        // pass the full platform hash string instead.
+        // NOTE: the legacy Int overload maps 37 -> "android-37", but an SDK that installs the
+        // minor-version platform registers it as "platforms;android-37.0", so pass the full
+        // platform hash string here.
         compileSdkVersion("android-37.0")
         ndkVersion = androidCompileNdkVersion
         buildToolsVersion = androidBuildToolsVersion

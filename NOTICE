@@ -33,8 +33,11 @@ corrected or removed.
   * `core/external/axml/manifest-editor` — ManifestEditor
     <https://github.com/WindySha/ManifestEditor>, a fork of Sable/axml, also used by
     Xpatch. **Upstream ships no license file.** It is included unmodified with its
-    original file headers. If you own the rights to this code and object to its
-    redistribution here, open an issue and it will be removed.
+    original file headers. Its demo signing keystore
+    (`lib/src/main/assets/new_keystore`, a JKS) is still in that tree; this build never
+    reads it (only `lib/src/main/java` is compiled), and it is upstream's file, not ours.
+    If you own the rights to this code and object to its redistribution here, open an
+    issue and it will be removed.
 
 
 2. Code decompiled from MT Manager (`patch/src/main/java/bin/`)
