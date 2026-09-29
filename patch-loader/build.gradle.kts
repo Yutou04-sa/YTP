@@ -68,7 +68,10 @@ androidComponents.onVariants { variant ->
         into("${rootProject.projectDir}/out/assets/${variant.name}/ytp")
     }
 
-    val copySoTask = tasks.register<Copy>("copySo$variantCapped") {
+    // Sync, not Copy: the destination is re-created on every run, so libraries for an ABI that is not
+    // part of this build (a narrowed -PytpAbis run, or a stale lib from an older build) can never leak
+    // into the APK through out/assets.
+    val copySoTask = tasks.register<Sync>("copySo$variantCapped") {
         dependsOn("assemble$variantCapped")
         dependsOn("strip${variantCapped}DebugSymbols")
         val libDir = variant.name + "/strip${variantCapped}DebugSymbols"
