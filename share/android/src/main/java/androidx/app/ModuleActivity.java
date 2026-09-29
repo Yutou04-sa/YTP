@@ -460,6 +460,11 @@ public class ModuleActivity extends Activity {
                     return "保存重启";
                 }
                 return "Save & Restart";
+            case "restart_hint":
+                if ("zh".equals(language)) {
+                    return "已保存，重启应用后生效";
+                }
+                return "Saved. Restart the app to apply.";
             case "grant_permission":
                 if ("zh".equals(language)) {
                     return "请授予获取应用列表权限";
@@ -686,7 +691,8 @@ public class ModuleActivity extends Activity {
                         appSelectionMap.clear();
                         // 先保存配置，保存成功后再退出；保存失败则不退出，留在界面上提示用户
                         if (saveConfig()) {
-                            System.exit(0);
+                            Toast.makeText(ModuleActivity.this, getString("restart_hint"), Toast.LENGTH_LONG).show();
+                            finish();
                         }
                     })
                     .setNegativeButton(getString("cancel"), null)
@@ -699,9 +705,11 @@ public class ModuleActivity extends Activity {
         });
 
         confirmButton.setOnClickListener(v -> {
-            // 先保存配置，保存成功后再退出；保存失败则不退出，留在界面上提示用户
+            // 先保存配置，保存成功后再退出；保存失败则不退出，留在界面上提示用户。
+            // 这里不再 System.exit(0)：那会直接杀掉宿主进程；改为关闭本页并提示用户重启应用。
             if (saveConfig()) {
-                System.exit(0);
+                Toast.makeText(ModuleActivity.this, getString("restart_hint"), Toast.LENGTH_LONG).show();
+                finish();
             }
         });
     }
@@ -716,8 +724,8 @@ public class ModuleActivity extends Activity {
             if(Files.notExists(modulePath)){
                 Files.createFile(modulePath);
             }
-            // 保存选中的应用信息为字符串
-            Files.write(modulePath, sb.toString().getBytes());
+            // 保存选中的应用信息为字符串（固定 UTF-8，读取端同样按 UTF-8 解析）
+            Files.write(modulePath, sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
             return true;
         } catch (IOException e) {
             // 保存失败不再抛 RuntimeException 崩溃：记录日志并提示用户，保持在界面上
@@ -987,12 +995,18 @@ public class ModuleActivity extends Activity {
             try {
                 bytes = Files.readAllBytes(moduleConfigPath);
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                // 读不到配置只影响预勾选状态：绝不能抛出去（本方法由 onCreate 调用，
+                // 抛出会连坐宿主进程一起崩溃）。
+                Log.e("ModuleManager", "Cannot read module config " + moduleConfigPath, e);
+                Toast.makeText(this, "无法读取模块配置：" + moduleConfigPath, Toast.LENGTH_LONG).show();
+                return;
             }
             if(bytes == null || bytes.length == 0) return;
-            String config = new String(bytes);
+            String config = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            if (!config.isEmpty() && config.charAt(0) == '\uFEFF') config = config.substring(1);
             String[] split = config.split(",");
             for (String packageName : split) {
+                packageName = packageName.trim();
                 if(packageName.isEmpty()) continue;
                 AppInfo appInfo = new AppInfo(packageName,packageName);
                 appSelectionMap.put(appInfo.getPackageName(), true);

@@ -20,6 +20,7 @@ import org.lsposed.lspd.service.ILSPApplicationService;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -54,9 +55,18 @@ public class LocalApplicationService extends ILSPApplicationService.Stub {
 
     /** Package names taken from assets/config are used to build paths and zip entries. */
     private static boolean isSafePackageName(String packageName) {
-        return packageName != null && !packageName.isEmpty()
-                && !packageName.contains("/") && !packageName.contains("\\")
-                && !packageName.contains("..");
+        if (packageName == null || packageName.isEmpty()) return false;
+        // 只接受合法的 Android 包名：字母开头，字母/数字/下划线/点，且不含 ".."。
+        // 比“拦掉 / \ .. ”更严格，能挡掉控制字符、空格、URL 编码残留等导致
+        // getApplicationInfo 抛异常（模块静默不加载）的脏输入。
+        if (packageName.startsWith(".") || packageName.endsWith(".") || packageName.contains("..")) return false;
+        for (int i = 0; i < packageName.length(); i++) {
+            char c = packageName.charAt(i);
+            boolean ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '_' || c == '.';
+            if (!ok) return false;
+        }
+        return true;
     }
 
     private void loadAssetsModule() throws IOException {
@@ -125,11 +135,15 @@ public class LocalApplicationService extends ILSPApplicationService.Stub {
                 return;
             }
             if(bytes.length == 0) return;
-            String config = new String(bytes);
+            // 固定 UTF-8 并剥掉 BOM：清单由模块页面写出，可能被其它编辑工具加上 BOM 或
+            // 用非 UTF-8 保存；用默认字符集会让第一个包名带上 BOM 而找不到应用。
+            String config = new String(bytes, StandardCharsets.UTF_8);
+            if (!config.isEmpty() && config.charAt(0) == '\uFEFF') config = config.substring(1);
             // 逗号分隔的模块包名列表
             String[] appList = config.split(",");
             PackageManager pm = context.getPackageManager();
             for (String packageName : appList) {
+                packageName = packageName.trim();
                 if(packageName.isEmpty()) continue;
                 if(!isSafePackageName(packageName)){
                     Log.w(TAG, "Skipping module with an unsafe package name: " + packageName);

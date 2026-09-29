@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.ZipFile;
@@ -78,14 +79,21 @@ public class ModuleLoader {
         var initEntry = apkFile.getEntry(initName);
         if (initEntry == null) return;
         try (var in = apkFile.getInputStream(initEntry)) {
-            var reader = new BufferedReader(new InputStreamReader(in));
+            // 入口清单一律按 UTF-8 解析：默认字符集在部分设备上不是 UTF-8，
+            // 会把类名/库名读成乱码；文件可能带 BOM，需剥掉。
+            var reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             String name;
+            boolean first = true;
             while ((name = reader.readLine()) != null) {
+                if (first) {
+                    first = false;
+                    if (!name.isEmpty() && name.charAt(0) == '\uFEFF') name = name.substring(1);
+                }
                 name = name.trim();
                 if (name.isEmpty() || name.startsWith("#") || names.contains(name)) continue;
                 names.add(name);
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             Log.e(TAG, "Can not open " + initEntry, e);
         }
     }
@@ -132,9 +140,11 @@ public class ModuleLoader {
                     return null;
                 }
             }
-        } catch (IOException e) {
+        } catch (Throwable e) {
+            // 模块 apk 不可控：ZipFile/SharedMemory 可能抛 SecurityException、IllegalArgumentException，
+            // 甚至 OutOfMemoryError。这里绝不能让异常冒到被补丁应用（宿主）的启动路径上。
             closeDexes(preLoadedDexes);
-            Log.e(TAG, "Can not open " + path, e);
+            Log.e(TAG, "Can not load module " + path, e);
             return null;
         }
         file.preLoadedDexes = preLoadedDexes;

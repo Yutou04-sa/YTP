@@ -77,12 +77,17 @@ public class Init {
             }
 
             String soAssetPath = String.format(LIB_ASSET_PATH, arch);
+            // context == null 时 extractSoFile 只返回 apk 内路径（<apk>!/assets/ytp/so/<abi>/libytp.so），
+            // nativeloader 能直接从这个路径加载（Android 10+ 走 clns 命名空间），不需要落到 cache。
             String soFile = soPath(extractSoFile(context, soAssetPath, cl));
             Log.i(TAG, "loader so:" + soFile);
             try {
                 System.load(soFile);
             } catch (UnsatisfiedLinkError e) {
-                Log.w(TAG, "Failed to load so from: " + soFile + ", fallback to cache dir", e);
+                // 备选路径：先试 APK 自己的 nativeLibraryDir（若补丁包带了 lib/<abi>/libytp.so），
+                // 再退回把 so 解到 cache 目录（API 28 及以下可行，API 29+ 因 untrusted_app 禁止
+                // 执行应用数据目录里的文件而可能失败——所以放在最后）。
+                Log.w(TAG, "Failed to load so from: " + soFile + ", trying nativeLibraryDir / cache dir", e);
                 fallbackLoad(context, cl, soFile, soAssetPath);
             }
             Log.i(TAG, context != null ? "Initialize Application Success" : "Initialize AppComponentFactory Success");
@@ -187,9 +192,26 @@ public class Init {
     }
 
     /**
-     * 降级加载：将SO文件写入cache目录并加载
+     * 降级加载：先试 APK 的 nativeLibraryDir（补丁包带 lib/<abi>/libytp.so 时存在），
+     * 再退回把 so 写到 cache 目录加载（API 28 及以下可行）。
      */
     private static void fallbackLoad(Context context, ClassLoader cl, String failedSoFile, String soAssetPath) throws Throwable {
+        String libName = new File(failedSoFile).getName();
+
+        try {
+            String nativeLibraryDir = getAppInfo().nativeLibraryDir;
+            if (nativeLibraryDir != null) {
+                File nativeSoFile = new File(nativeLibraryDir, libName);
+                if (nativeSoFile.isFile()) {
+                    Log.i(TAG, "Loading so from nativeLibraryDir: " + nativeSoFile.getAbsolutePath());
+                    System.load(nativeSoFile.getAbsolutePath());
+                    return;
+                }
+            }
+        } catch (Throwable e) {
+            Log.w(TAG, "Failed to load so from nativeLibraryDir", e);
+        }
+
         File cacheDir = context != null 
             ? Paths.get(context.getCacheDir().getAbsolutePath()).resolve(LOWER_CASE_NAME).toFile()
             : Paths.get(getDataDir()).resolve("cache").resolve(LOWER_CASE_NAME).toFile();
@@ -198,7 +220,6 @@ public class Init {
             throw new IOException("Failed to create cache directory: " + cacheDir.getAbsolutePath());
         }
         
-        String libName = new File(failedSoFile).getName();
         File cacheSoFile = new File(cacheDir, libName);
         if (cacheSoFile.exists()) {
             cacheSoFile.delete();
@@ -254,11 +275,10 @@ public class Init {
         try {
             File crashDir;
             String packageName = getAppInfo().packageName;
-            if (context != null) {
-                crashDir = Paths.get(new File(context.getExternalFilesDir(null),"Android").getAbsolutePath())
-                        .resolve("data")
-                        .resolve(packageName)
-                        .resolve("files")
+            File externalFilesDir = context != null ? context.getExternalFilesDir(null) : null;
+            if (externalFilesDir != null) {
+                // /storage/emulated/0/Android/data/<pkg>/files/ytp/log
+                crashDir = Paths.get(externalFilesDir.getAbsolutePath())
                         .resolve(TAG.toLowerCase())
                         .resolve("log")
                         .toFile();
