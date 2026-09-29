@@ -192,24 +192,10 @@ object LSPPackageManager {
                 val appInfos = apks.mapNotNull { uri ->
                     val src = DocumentFile.fromSingleUri(lspApp, uri)
                         ?: throw IOException("DocumentFile is null")
-                    val dst = lspApp.tmpApkDir.resolve(src.name!!)
-                    val input = lspApp.contentResolver.openInputStream(uri)
-                        ?: throw IOException("InputStream is null")
-                    try {
-                        val output = dst.outputStream()
-                        input.use {
-                            output.use {
-                                input.copyTo(output)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Direct file copy failed, trying alternative approach", e)
-                        copyFile(input, dst)
-                    }
-
-                    if(!dst.exists()){
-                        copyFile(input, dst)
-                    }
+                    val name = src.name?.takeIf { it.isNotBlank() }
+                        ?: throw IOException("Unable to resolve a file name for $uri")
+                    val dst = lspApp.tmpApkDir.resolve(name)
+                    copyUriToFile(uri, dst)
 
                     val appInfo = lspApp.packageManager.getPackageArchiveInfo(
                         dst.absolutePath, PackageManager.GET_META_DATA
@@ -323,6 +309,35 @@ object LSPPackageManager {
                 ris[0].activityInfo.packageName,
                 ris[0].activityInfo.name
             )
+    }
+
+    /**
+     * Copies the apk behind [uri] into [dst].
+     *
+     * 兜底路径必须重新打开输入流：原来复用的是已经被 `use { }` 关掉的流，所以兜底永远不会成功。
+     * 现在每条流都只被关闭一次，正常路径的行为保持不变。
+     */
+    private fun copyUriToFile(uri: Uri, dst: File) {
+        val input = lspApp.contentResolver.openInputStream(uri)
+            ?: throw IOException("InputStream is null")
+
+        try {
+            input.use { inputStream ->
+                dst.outputStream().use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Direct file copy failed, trying alternative approach", e)
+            // 失败可能留下半截文件，删掉才能让下面的兜底真正执行。
+            dst.delete()
+        }
+
+        if (!dst.exists()) {
+            val fallbackInput = lspApp.contentResolver.openInputStream(uri)
+                ?: throw IOException("InputStream is null")
+            copyFile(fallbackInput, dst)
+        }
     }
 
     fun copyFile(input: InputStream, dst: File) {

@@ -53,19 +53,29 @@ object Patcher {
     suspend fun patch(logger: Logger, options: Options) {
         return withContext(Dispatchers.IO) {
             // Keep a private copy of the original apk before it gets patched
-            OriginApkStore.backup(options.packageName, options.sourceApkPaths, options.newPackageName)
+            try {
+                OriginApkStore.backup(options.packageName, options.sourceApkPaths, options.newPackageName)
+            } catch (t: Throwable) {
+                // Never silently continue without the safety net: tell the user the original
+                // apk cannot be restored automatically.
+                logger.e("警告：原始 APK 备份失败（${t.message}），补丁完成后将无法自动还原原包")
+            }
             YTPPatch(logger, *options.toStringArray()).doCommandLine()
             val uri = Configs.storageDirectory?.toUri()
                 ?: throw IOException("Uri is null")
             val root = DocumentFile.fromTreeUri(lspApp, uri)
                 ?: throw IOException("DocumentFile is null")
-            lspApp.externalCacheDir?.deleteRecursively()
+            val externalCacheDir = lspApp.externalCacheDir
+            externalCacheDir?.deleteRecursively()
+            // Falls back to the internal cache when external storage is unavailable, so the
+            // output files never end up with a null parent (i.e. a relative path).
+            val outputDir = externalCacheDir ?: lspApp.cacheDir
             lspApp.targetApkFiles?.clear()
             val apkFileList = arrayListOf<File>()
             lspApp.tmpApkDir.walk()
                 .filter { it.isFile && it.name.endsWith(Constants.PATCH_FILE_SUFFIX) }
                 .forEach { tempApkFile ->
-                    val cachedApkFile = File(lspApp.externalCacheDir, tempApkFile.name)
+                    val cachedApkFile = File(outputDir, tempApkFile.name)
                     if (tempApkFile.renameTo(cachedApkFile).not()) {
                         tempApkFile.copyTo(cachedApkFile, overwrite = true)
                         tempApkFile.delete()

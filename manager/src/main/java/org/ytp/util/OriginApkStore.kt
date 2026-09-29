@@ -22,6 +22,7 @@ object OriginApkStore {
     private const val ROOT_DIR = "origin"
     private const val META_FILE = "meta.properties"
     private const val TMP_SUFFIX = ".tmp"
+    private const val OLD_SUFFIX = ".old"
 
     private const val KEY_LABEL = "label"
     private const val KEY_VERSION_NAME = "versionName"
@@ -137,14 +138,27 @@ object OriginApkStore {
                 }
             }
             File(tmp, META_FILE).outputStream().use { meta.store(it, null) }
-            target.deleteRecursively()
-            if (!tmp.renameTo(target)) throw IOException("Unable to move ${tmp.path} to ${target.path}")
+            // Move the previous backup aside instead of deleting it: a failure between the two
+            // renames can then be rolled back and never leaves the user without a copy.
+            val old = File(root, packageName + OLD_SUFFIX)
+            old.deleteRecursively()
+            if (target.exists() && !target.renameTo(old)) {
+                throw IOException("Unable to move ${target.path} aside")
+            }
+            if (!tmp.renameTo(target)) {
+                if (!old.renameTo(target)) {
+                    Log.e(TAG, "Unable to restore the previous backup of $packageName from ${old.path}")
+                }
+                throw IOException("Unable to move ${tmp.path} to ${target.path}")
+            }
+            old.deleteRecursively()
             Log.i(TAG, "Origin backup stored for $packageName ($versionCode)")
             readBackup(packageName)
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to back up $packageName", t)
             tmp.deleteRecursively()
-            null
+            // A real failure must not look like "nothing to back up": the caller reports it to the user.
+            throw if (t is IOException) t else IOException("Failed to back up $packageName", t)
         }
     }
 
@@ -152,7 +166,7 @@ object OriginApkStore {
         val root = rootDir()
         if (!root.isDirectory) return emptyList()
         return root.listFiles()
-            ?.filter { it.isDirectory && !it.name.endsWith(TMP_SUFFIX) }
+            ?.filter { it.isDirectory && !it.name.endsWith(TMP_SUFFIX) && !it.name.endsWith(OLD_SUFFIX) }
             ?.mapNotNull { readBackup(it.name) }
             ?.sortedByDescending { it.timestamp }
             ?: emptyList()
