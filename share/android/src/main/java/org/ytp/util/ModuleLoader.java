@@ -123,10 +123,6 @@ public class ModuleLoader {
                     readName(apkFile, LEGACY_NATIVE_INIT, moduleLibraryNames);
                 }
             }
-            Log.i(TAG, "  metadata: legacy=" + file.legacy
-                    + " hasLegacyJavaEntry=" + hasLegacyJavaEntry
-                    + " hasModernMetadata=" + hasModernMetadata
-                    + " classes=" + moduleClassNames + " libs=" + moduleLibraryNames);
             if (moduleClassNames.isEmpty() && moduleLibraryNames.isEmpty()) {
                 Log.w(TAG, "No Xposed entry point found in " + path);
                 return null;
@@ -150,9 +146,6 @@ public class ModuleLoader {
         file.preLoadedDexes = preLoadedDexes;
         file.moduleClassNames = moduleClassNames;
         file.moduleLibraryNames = moduleLibraryNames;
-        Log.i(TAG, "  loadModule ok: legacy=" + file.legacy
-                + " preLoadedDexes=" + preLoadedDexes.size()
-                + " classes=" + moduleClassNames + " libs=" + moduleLibraryNames);
         return file;
     }
 }

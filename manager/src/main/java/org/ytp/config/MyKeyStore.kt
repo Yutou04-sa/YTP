@@ -95,7 +95,7 @@ object MyKeyStore {
             }
             return keyStores ?: emptyList()
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to read the saved key store list from $keyStoreListFile", e)
             return emptyList()
         }
     }
@@ -110,7 +110,7 @@ object MyKeyStore {
                     }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e(TAG, "Failed to persist the key store list to $keyStoreListFile", e)
             }
         }
     }
