@@ -47,12 +47,16 @@ namespace lspd {
 
     static std::string GetXResourcesClassName() {
         auto &obfs_map = ConfigBridge::GetInstance()->obfuscation_map();
-        if (obfs_map.empty()) {
-            LOGW("GetXResourcesClassName: obfuscation_map empty?????");
+        auto it = obfs_map.find("android.content.res.XRes");
+        if (it == obfs_map.end()) {
+            // 不要用 at()：key 缺失会抛 std::out_of_range 穿过 JNI，直接 abort 目标进程。
+            LOGW("GetXResourcesClassName: no XRes entry in the obfuscation map, "
+                 "resource hooks are disabled");
+            return "";
         }
         static auto name = lspd::JavaNameToSignature(
-                obfs_map.at("android.content.res.XRes"))  // TODO: kill this hardcoded name
-                    .substr(1) + "ources";
+                it->second)  // TODO: kill this hardcoded name
+                                  .substr(1) + "ources";
         LOGD("{}", name.c_str());
         return name;
     }
@@ -170,12 +174,17 @@ namespace lspd {
                         if (attrNameID >= 0 && (size_t) attrNameID < mTree.mNumResIds &&
                             mResIds[attrNameID] >= 0x7f000000) {
                             auto attrName = mTree.mStrings.stringAt(attrNameID);
+                            jstring attrNameStr = env->NewString(
+                                    (const jchar *) attrName.data_,
+                                    (jsize) attrName.length_);
                             jint attrResID = env->CallStaticIntMethod(classXResources,
                                                                       methodXResourcesTranslateAttrId,
-                                                                      env->NewString(
-                                                                              (const jchar *) attrName.data_,
-                                                                              attrName.length_),
+                                                                      attrNameStr,
                                                                       origRes);
+                            // 每个属性都会新建一个 local ref，不释放的话大 XML（>512 属性）
+                            // 会撑爆 local reference table 并 abort 目标进程。
+                            if (attrNameStr != nullptr)
+                                env->DeleteLocalRef(attrNameStr);
                             if (env->ExceptionCheck())
                                 goto leave;
 
@@ -222,7 +231,19 @@ namespace lspd {
     };
 
     void RegisterResourcesHook(JNIEnv *env) {
-        auto sign = fmt::format("(JL{};Landroid/content/res/Resources;)V", GetXResourcesClassName());
+        auto xresources_class = GetXResourcesClassName();
+        if (xresources_class.empty()) {
+            // 拿不到 XResources 类名时 rewriteXmlReferencesNative 的签名无从拼出，
+            // 只注册前三个 native，避免整组 RegisterNatives 失败。
+            LOGW("RegisterResourcesHook: unknown XResources class, "
+                 "skipping rewriteXmlReferencesNative");
+            RegisterNativeMethodsInternal(env, GetNativeBridgeSignature() + "ResourcesHook",
+                                          gMethods, arraysize(gMethods) - 1);
+            return;
+        }
+        // 必须是 static：RegisterNatives 只保存这个指针，局部 std::string 返回后即析构。
+        static std::string sign;
+        sign = fmt::format("(JL{};Landroid/content/res/Resources;)V", xresources_class);
         gMethods[3].signature = sign.c_str();
 
         REGISTER_LSP_NATIVE_METHODS(ResourcesHook);

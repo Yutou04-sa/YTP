@@ -35,6 +35,8 @@ public final class LspModuleClassLoader extends ByteBufferDexClassLoader {
             splitPaths(System.getProperty("java.library.path"));
     private final String apk;
     private final List<File> nativeLibraryDirs = new ArrayList<>();
+    /** 复用的 apk 资源句柄：返回的 URL 引用它，所以只创建一次、随 classloader 存活。 */
+    private volatile ClassPathURLStreamHandler urlHandler;
 
     private static List<File> splitPaths(String searchPath) {
         var result = new ArrayList<File>();
@@ -134,16 +136,28 @@ public final class LspModuleClassLoader extends ByteBufferDexClassLoader {
     @Override
     protected URL findResource(String name) {
         try {
-            var urlHandler = new ClassPathURLStreamHandler(apk);
-            var url = urlHandler.getEntryUrlOrNull(name);
-            if (url == null) {
-                // noinspection FinalizeCalledExplicitly
-                urlHandler.finalize();
-            }
-            return url;
+            // ClassPathURLStreamHandler 会打开 apk（持有 fd），并且返回的 URL 引用它，
+            // 所以不能提前关闭；这里每个 classloader 复用一个实例，避免每次查资源都新开一个 fd。
+            var urlHandler = urlHandler();
+            if (urlHandler == null) return null;
+            return urlHandler.getEntryUrlOrNull(name);
         } catch (IOException e) {
             return null;
         }
+    }
+
+    private ClassPathURLStreamHandler urlHandler() throws IOException {
+        var handler = this.urlHandler;
+        if (handler == null) {
+            synchronized (this) {
+                handler = this.urlHandler;
+                if (handler == null) {
+                    handler = new ClassPathURLStreamHandler(apk);
+                    this.urlHandler = handler;
+                }
+            }
+        }
+        return handler;
     }
 
     @Override

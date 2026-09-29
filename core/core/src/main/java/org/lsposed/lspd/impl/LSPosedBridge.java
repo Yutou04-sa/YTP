@@ -551,9 +551,12 @@ public class LSPosedBridge {
          */
         @Override
         public void unhook() {
-            if (!unregistered) {
-                HookBridge.unhookMethod(true, executable, callback);
-                unregistered = true;
+            // 判重与实际取消必须原子完成，避免并发调用导致重复 unhook
+            synchronized (this) {
+                if (!unregistered) {
+                    HookBridge.unhookMethod(true, executable, callback);
+                    unregistered = true;
+                }
             }
         }
     }
@@ -1240,6 +1243,10 @@ public class LSPosedBridge {
 
             // 获取所有已注册的回调快照
             Object[][] callbacksSnapshot = HookBridge.callbackSnapshot(HookerCallback.class, method);
+            // 未 Hook 的方法（或 native 侧无 HookItem/backup）会返回 null，此时直接调用原始方法兜底
+            if (callbacksSnapshot == null) {
+                return HookBridge.invokeOriginalMethod(method, callback.thisObject, callback.args);
+            }
             Object[] modernSnapshot = callbacksSnapshot[0];
             Object[] legacySnapshot = callbacksSnapshot[1];
 

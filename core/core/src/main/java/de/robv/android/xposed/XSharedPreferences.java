@@ -203,8 +203,12 @@ public final class XSharedPreferences implements SharedPreferences {
             }
             if (!atLeastOneValid) {
                 try {
+                    // 关闭后必须置 null：否则 tryRegisterWatcher 会复用已关闭的 WatchService，
+                    // 注册时抛 ClosedWatchServiceException（被吞掉），偏好监听从此永久失效。
                     sWatcher.close();
                 } catch (Exception ignore) {
+                } finally {
+                    sWatcher = null;
                 }
             }
         }

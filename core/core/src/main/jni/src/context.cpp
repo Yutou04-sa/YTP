@@ -78,13 +78,15 @@ namespace lspd {
             auto java_dex_file = JNI_GetObjectFieldOf(env, element, "dexFile",
                                                       "Ldalvik/system/DexFile;");
             if (!java_dex_file) {
-                LOGE("Failed to get java dex file");
-                return;
+                // 不能 return：那样会跳过末尾的 RegisterResourcesHook/RegisterHookBridge/
+                // RegisterNativeAPI，框架的 hook 与资源钩子会整体失效。
+                LOGW("Failed to get java dex file, skipping this dex element");
+                continue;
             }
             auto cookie = JNI_GetObjectFieldOf(env, java_dex_file, "mCookie", "Ljava/lang/Object;");
             if (!cookie) {
-                LOGE("Failed to get cookie");
-                return;
+                LOGW("Failed to get cookie, skipping this dex element");
+                continue;
             }
             lsplant::MakeDexFileTrusted(env, cookie.get());
         }

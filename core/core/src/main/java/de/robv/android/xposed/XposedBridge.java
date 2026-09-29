@@ -103,6 +103,7 @@ public final class XposedBridge {
                     // nullability of the result configuration. So we hereby set a dummy
                     // ActivityThread to bypass such a situation.
                     var fake = XposedHelpers.newInstance(ActivityThread.class);
+                    var previous = XposedHelpers.getStaticObjectField(ActivityThread.class, "sCurrentActivityThread");
                     XposedHelpers.setStaticObjectField(ActivityThread.class, "sCurrentActivityThread", fake);
                     try {
                         TypedArray ta = res.obtainTypedArray(res.getIdentifier(
@@ -110,7 +111,9 @@ public final class XposedBridge {
                         taClass = ta.getClass();
                         ta.recycle();
                     } finally {
-                        XposedHelpers.setStaticObjectField(ActivityThread.class, "sCurrentActivityThread", null);
+                        // 恢复原值而不是置 null：这个方法可能在已有 ActivityThread 的进程里被调用，
+                        // 置 null 会让后续所有 ActivityThread.currentActivityThread() 拿到 null。
+                        XposedHelpers.setStaticObjectField(ActivityThread.class, "sCurrentActivityThread", previous);
                     }
                 }
             } catch (Resources.NotFoundException nfe) {

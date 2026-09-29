@@ -5,6 +5,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteStatement;
 import android.os.Bundle;
+import android.os.Parcel;
 import android.os.RemoteException;
 import android.util.Log;
 import android.util.Pair;
@@ -27,7 +28,11 @@ import java.util.function.Supplier;
 public class ModuleConfigManager {
 
     private static final String TAG = "ModuleConfigManager";
-    private static ModuleConfigManager instance = null;
+    /**
+     * 单例实例。构造器会打开数据库并初始化表结构，因此必须保证只被构造一次；
+     * volatile + 方法级 synchronized 双重保证可见性与互斥（仍保持懒加载语义）。
+     */
+    private static volatile ModuleConfigManager instance = null;
 
     private SQLiteDatabase db = null;
 
@@ -76,8 +81,8 @@ public class ModuleConfigManager {
         initDB();
     }
 
-  public  static ModuleConfigManager getInstance() {
-        if (instance == null)  instance = new ModuleConfigManager();
+    public static synchronized ModuleConfigManager getInstance() {
+        if (instance == null) instance = new ModuleConfigManager();
         return instance;
     }
 
@@ -124,7 +129,11 @@ public class ModuleConfigManager {
             //更新
             if(module != null){
                 long mid = (long) module.get("mid");
-                updateModule(mid, modulePkgName, apkPath, enabled);
+                if (!updateModule(mid, modulePkgName, apkPath, enabled)) {
+                    Log.w(TAG, "Failed to update module: " + modulePkgName + ", mid: " + mid);
+                }
+                // 必须标记事务成功，否则 endTransaction() 会整体回滚，更新被静默丢弃
+                db.setTransactionSuccessful();
                 return  mid;
             }else {
                 SQLiteStatement stmt = db.compileStatement(sql);
@@ -226,9 +235,11 @@ public class ModuleConfigManager {
         String sql = "INSERT INTO scope (mid, app_pkg_name) VALUES (?, ?)";
         db.beginTransaction();
         try {
-            Map<String, Object> scopeByAppPkgName = getScopeByAppPkgName(appPkgName);
-            if(scopeByAppPkgName != null){
+            // 判重必须按 (mid, app_pkg_name) 维度：
+            // 别的模块已把该 app 加入 scope 时，本模块自己的那行仍然要落库
+            if (hasScope(mid, appPkgName)) {
                 Log.d(TAG, "Extend scope: mid=" + mid+ ", app=" + appPkgName);
+                db.setTransactionSuccessful();
                 return true;
             }
             SQLiteStatement stmt = db.compileStatement(sql);
@@ -243,6 +254,19 @@ public class ModuleConfigManager {
             return false;
         } finally {
             db.endTransaction();
+        }
+    }
+
+    /**
+     * 按 (mid, app_pkg_name) 维度判断作用域行是否已存在。
+     */
+    private boolean hasScope(long mid, String appPkgName) {
+        String sql = "SELECT 1 FROM scope WHERE mid = ? AND app_pkg_name = ? LIMIT 1";
+        try (Cursor cursor = db.rawQuery(sql, new String[]{String.valueOf(mid), appPkgName})) {
+            return cursor.moveToFirst();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to query scope: mid=" + mid + ", app=" + appPkgName, e);
+            return false;
         }
     }
 
@@ -288,12 +312,14 @@ public class ModuleConfigManager {
     }
 
     /**
-     * 查询所有作用域包名
+     * 查询指定模块的所有作用域包名
+     *
+     * @param mid 模块 id，只返回该模块自己的作用域，避免跨模块泄漏
      */
-    public List<String> getAllScope() {
-        String sql = "SELECT app_pkg_name FROM scope";
+    public List<String> getAllScope(long mid) {
+        String sql = "SELECT app_pkg_name FROM scope WHERE mid = ?";
         List<String> appPkgNames = new ArrayList<>();
-        try (Cursor cursor = db.rawQuery(sql, null)) {
+        try (Cursor cursor = db.rawQuery(sql, new String[]{String.valueOf(mid)})) {
             while (cursor.moveToNext()) {
                 String scope = cursor.getString(0);
                 appPkgNames.add(scope);
@@ -363,7 +389,11 @@ public class ModuleConfigManager {
                 }
                 var bundle = new Bundle();
                 bundle.putSerializable("config", (Serializable) config);
-                if (bundle.size() > 1024 * 1024) {
+                // Bundle.size() 返回的是 key 的个数（永远远小于 1MB），无法用于大小校验；
+                // 这里按 Binder 传输的语义先把 Bundle 写入 Parcel，再取实际字节数
+                int bundleSize = bundleDataSize(bundle);
+                if (bundleSize > 1024 * 1024) {
+                    Log.e(TAG, "Preference too large: " + bundleSize + " bytes (limit " + (1024 * 1024) + ")");
                     throw new IllegalArgumentException("Preference too large");
                 }
             });
@@ -394,6 +424,24 @@ public class ModuleConfigManager {
             execution.run();
             return null;
         });
+    }
+
+    /**
+     * 计算 Bundle 序列化后的实际字节数（与跨进程传输时的大小一致）。
+     *
+     * @return 实际字节数；若内容无法写入 Parcel 则返回 -1（此时跳过大小校验，保持原有行为）
+     */
+    private static int bundleDataSize(Bundle bundle) {
+        var parcel = Parcel.obtain();
+        try {
+            parcel.writeBundle(bundle);
+            return parcel.dataSize();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Failed to compute bundle size", e);
+            return -1;
+        } finally {
+            parcel.recycle();
+        }
     }
 
 

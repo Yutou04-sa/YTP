@@ -77,7 +77,15 @@ inline bool RegisterNativeMethodsInternal(JNIEnv *env, std::string_view class_na
 
 inline std::string GetNativeBridgeSignature() {
     const auto &obfs_map = ConfigBridge::GetInstance()->obfuscation_map();
-    static auto signature = obfs_map.at("org.lsposed.lspd.nativebridge.");
+    constexpr auto kPlainNativeBridge = "org.lsposed.lspd.nativebridge.";
+    auto it = obfs_map.find(kPlainNativeBridge);
+    if (it == obfs_map.end()) {
+        // 不要用 at()：key 缺失会抛 std::out_of_range 穿过 JNI，直接 abort 目标进程。
+        LOGW("No obfuscation entry for {}, falling back to the plain name", kPlainNativeBridge);
+        static const std::string fallback = kPlainNativeBridge;
+        return fallback;
+    }
+    static auto signature = it->second;
     return signature;
 }
 

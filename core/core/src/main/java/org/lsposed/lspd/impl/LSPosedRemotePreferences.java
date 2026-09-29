@@ -87,8 +87,11 @@ public class LSPosedRemotePreferences implements SharedPreferences {
     @Nullable
     @Override
     public Set<String> getStringSet(String key, @Nullable Set<String> defValues) {
-        var v = (Set<String>) mMap.getOrDefault(key, defValues);
-        if (v != null) return v;
+        var v = (Set<String>) mMap.get(key);
+        if (v != null) {
+            // 返回副本，避免调用方修改返回值污染内部缓存
+            return new ArraySet<>(v);
+        }
         return defValues;
     }
 

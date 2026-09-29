@@ -57,6 +57,14 @@ public:
                                        std::memory_order_acq_rel, std::memory_order_relaxed);
         backup.notify_all();
     }
+    // hook 失败后 item 会带着 FAILED 留在 hooked_methods 里，这里把它重置回“未尝试”，
+    // 使同一次运行内还能重新 hook 这个方法（否则该方法在本进程内永远 hook 不上）。
+    bool TryResetFailed() {
+        jobject failed = FAILED;
+        return backup.compare_exchange_strong(failed, nullptr,
+                                              std::memory_order_acq_rel,
+                                              std::memory_order_relaxed);
+    }
 };
 
 template <class K, class V, class Hash = phmap::priv::hash_default_hash<K>,
@@ -438,19 +446,38 @@ LSP_DEF_NATIVE_METHOD(jboolean, HookBridge, hookMethod, jboolean useModernApi, j
         ctor(target, std::move(ptr));
         newHook = true;
     });
+    if (!newHook && !hook_item->GetBackup() && hook_item->TryResetFailed()) {
+        // 之前失败过：把 FAILED 标记重置后重试，否则本进程内这个方法永远 hook 不上。
+        LOGW("Retrying a hook that previously failed");
+        newHook = true;
+    }
     if (newHook) {
         EnsureCallbackClasses(env);
-        if (env->ExceptionCheck()) {
-            hook_item->SetBackup(nullptr);
-            return JNI_FALSE;
-        }
         auto init = env->GetMethodID(hooker, "<init>", "(Ljava/lang/reflect/Executable;)V");
         auto callback_method = env->ToReflectedMethod(hooker, env->GetMethodID(hooker, "callback",
                                                                                "([Ljava/lang/Object;)Ljava/lang/Object;"),
                                                       false);
-        auto hooker_object = env->NewObject(hooker, init, hookMethod);
-        hook_item->SetBackup(lsplant::Hook(env, hookMethod, hooker_object, callback_method));
-        env->DeleteLocalRef(hooker_object);
+        jobject hooker_object = nullptr;
+        jobject new_backup = nullptr;
+        if (!env->ExceptionCheck() && init && callback_method) {
+            hooker_object = env->NewObject(hooker, init, hookMethod);
+        }
+        if (env->ExceptionCheck()) {
+            // 原来这里既不检查也不清异常，异常会一路传回 Java；且 item 被标成 FAILED 后
+            // 永久留在 hooked_methods 里，该方法在本进程内再也 hook 不上。
+            LOGE("Failed to create the hooker object for the target method");
+            env->ExceptionClear();
+        } else if (hooker_object) {
+            new_backup = lsplant::Hook(env, hookMethod, hooker_object, callback_method);
+            if (env->ExceptionCheck()) {
+                LOGE("lsplant::Hook threw an exception");
+                env->ExceptionClear();
+                new_backup = nullptr;
+            }
+        }
+        if (hooker_object) env->DeleteLocalRef(hooker_object);
+        hook_item->SetBackup(new_backup);
+        if (!new_backup) return JNI_FALSE;
     }
     jobject backup = hook_item->GetBackup();
     if (!backup) return JNI_FALSE;

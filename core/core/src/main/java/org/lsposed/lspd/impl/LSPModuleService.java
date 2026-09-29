@@ -89,7 +89,8 @@ public class LSPModuleService extends IXposedService.Stub {
 
     @Override
     public List<String> getScope() throws RemoteException {
-        return configManager.getAllScope();
+        // 只返回本模块自己的作用域，避免把其它模块的作用域泄漏给调用方
+        return configManager.getAllScope(mid);
     }
 
     @Override
