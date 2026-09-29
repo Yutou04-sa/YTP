@@ -1,5 +1,6 @@
 package org.ytp.config
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -26,6 +27,7 @@ data class KeyStoreItem(
 ) : Serializable
 
 object MyKeyStore {
+    private const val TAG = "MyKeyStore"
     const val KEY_STORE_NAME_LSPATCH = "LSPatch"
     val file = File("${_root_ide_package_.org.ytp.lspApp.filesDir}/keystore.bks")
     val tmpFile = File("${_root_ide_package_.org.ytp.lspApp.filesDir}/keystore.bks.tmp")
@@ -217,15 +219,21 @@ object MyKeyStore {
 
         if (keyStoreItem != null) {
             if(keyStoreItem.isDefault){
-                lspApp.assets.open(keyStoreItem.path).use { key ->
-                    file.outputStream().use {
-                        it.write(key.readBytes())
+                try {
+                    lspApp.assets.open(keyStoreItem.path).use { key ->
+                        file.outputStream().use {
+                            it.write(key.readBytes())
+                        }
                     }
+                } catch (e: Exception) {
+                    // 读不到内置密钥时保持原有的降级行为：不中断，继续按下面的配置项走。
+                    Log.e(TAG, "Failed to read built-in key store ${keyStoreItem.path}", e)
                 }
             }
             else{
                 val keyStoreFile = File(keyStoreItem.path)
                 if (!keyStoreFile.exists()) {
+                    Log.e(TAG, "Key store file does not exist: ${keyStoreItem.path}")
                     return
                 }
                 // 复制选定的密钥文件到主文件位置，以便系统使用

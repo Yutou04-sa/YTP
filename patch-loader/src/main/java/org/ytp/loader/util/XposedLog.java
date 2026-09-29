@@ -95,6 +95,8 @@ public class XposedLog {
             }
             out.write((fmt.format(new Date())+" "+text).getBytes());
             out.write("\n".getBytes());
-        }catch (Exception ignored){ }
+        }catch (Exception e){
+            Log.e("XposedLog", "Error writing log file", e);
+        }
     }
 }

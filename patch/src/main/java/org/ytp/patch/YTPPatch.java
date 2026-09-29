@@ -46,6 +46,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -217,8 +218,11 @@ public class YTPPatch {
 
             logger.i("Processing \n" + srcApkFile + "\n -> \n" + outputFile);
             if(!srcApkFile.getAbsolutePath().contains("/cache/")){
-                File file = new File(outputDir, "base.apk");
-                Files.copy(srcApkFile.toPath(),file.toPath());
+                // Never reuse a fixed temporary name: the next source apk of the same run would
+                // hit FileAlreadyExistsException and fail the whole patch. Keep the name derived
+                // from the source so a split still produces its own output file.
+                File file = new File(outputDir, "work-" + apkFileName);
+                Files.copy(srcApkFile.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 patch(file);
             }else {
                 patch(srcApkFile);
@@ -249,10 +253,6 @@ public class YTPPatch {
 
             embedPatchFile(srcZFile);
             var manifestEntry = srcZFile.get(ANDROID_MANIFEST_XML);
-            StoredEntry destManifestEntry = srcZFile.get(ANDROID_MANIFEST_XML);
-            if(destManifestEntry!=null){
-                manifestEntry = destManifestEntry;
-            }
             if (manifestEntry == null)
                 throw new PatchError("Provided file is not a valid apk");
 
@@ -274,7 +274,7 @@ public class YTPPatch {
             final var configBytes = new Gson().toJson(config).getBytes(StandardCharsets.UTF_8);
 
             try (var manifestEntryIs = manifestEntry.open();
-                    var is = new ByteArrayInputStream(modifyManifestFile(manifestEntryIs, apk.getMinSdkVersion(), config, pair.permissions, pair.use_permissions, pair.activity_names))) {
+                    var is = new ByteArrayInputStream(modifyManifestFile(manifestEntryIs, config, pair.permissions, pair.use_permissions, pair.activity_names))) {
                 srcZFile.add(ANDROID_MANIFEST_XML, is);
             } catch (Throwable e) {
                 throw new PatchError("Error when modifying manifest", e);
@@ -302,7 +302,9 @@ public class YTPPatch {
                 if (name.startsWith(EMBEDDED_MODULES_ASSET_PATH)) {
                     try {
                         e.delete();
-                    } catch (IOException ignored) {}
+                    } catch (IOException ex) {
+                        logger.e("Failed to delete embedded module entry " + name + ": " + ex);
+                    }
                 }
                 //收集已有的so架构
                 else if (name.startsWith("lib/") && name.endsWith(".so")) {
@@ -313,7 +315,9 @@ public class YTPPatch {
                 else if(name.startsWith("META-INF/") && (name.endsWith(".RSA") || name.endsWith(".SF") || name.endsWith(".MF"))){
                     try {
                         e.delete();
-                    } catch (IOException ignored) {}
+                    } catch (IOException ex) {
+                        logger.e("Failed to delete v1 signature entry " + name + ": " + ex);
+                    }
                 }
             });
 
@@ -408,7 +412,9 @@ public class YTPPatch {
         if(modules.isEmpty()) {
             try {
                 zFile.add(EMBEDDED_MODULES_ASSET_PATH, ByteSource.wrap(new byte[0]), false);
-            } catch (IOException ignored) { }
+            } catch (IOException ex) {
+                logger.e("Failed to add embedded modules placeholder: " + ex);
+            }
         }
         for (var module : modules) {
             File file = new File(module);
@@ -417,6 +423,13 @@ public class YTPPatch {
                  var xmlIs = Objects.requireNonNull(apk.get(ANDROID_MANIFEST_XML)).open()) {
                 var manifest = Objects.requireNonNull(ManifestParser.parseManifestFile(xmlIs));
                 var packageName = manifest.packageName;
+                // 包名来自外部 APK，直接拼进 entry 名可能造出越出目录的 zip entry
+                if (packageName == null || packageName.isEmpty()
+                        || packageName.contains("/") || packageName.contains("\\")
+                        || packageName.contains("..")) {
+                    logger.e(module + ": invalid package name '" + packageName + "', skip embedding");
+                    continue;
+                }
                 logger.d(" - " + packageName+".apk");
                 zFile.add(EMBEDDED_MODULES_ASSET_PATH + packageName + ".apk", fileIs);
             } catch (NullPointerException | IOException e) {
@@ -449,7 +462,6 @@ public class YTPPatch {
      * Modify manifest file
      *
      * @param is               Manifest file input stream
-     * @param minSdkVersion    Minimum SDK version
      * @param config           Patch configuration
      * @param permissions      Permissions list
      * @param uses_permissions Used permissions list
@@ -457,7 +469,7 @@ public class YTPPatch {
      * @return Modified manifest file as byte array
      * @throws IOException IO exception
      */
-    public byte[] modifyManifestFile(InputStream is, int minSdkVersion, PatchConfig config, List<String> permissions, List<String> uses_permissions, List<String> activity_names) throws IOException {
+    public byte[] modifyManifestFile(InputStream is, PatchConfig config, List<String> permissions, List<String> uses_permissions, List<String> activity_names) throws IOException {
         ModificationProperty property = new ModificationProperty();
 
         // 改包名：只改 manifest 的 package 属性，dex 里的类名保持原样。

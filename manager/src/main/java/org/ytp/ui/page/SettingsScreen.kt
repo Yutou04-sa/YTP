@@ -93,7 +93,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.ytp.R
 import org.ytp.config.Configs
 import org.ytp.config.MyKeyStore
@@ -432,7 +434,7 @@ private fun KeyStore() {
                             MyKeyStore.selectKeyStore(keyStore.name)
                             expanded = false
                         } catch (e: Exception) {
-                            e.printStackTrace()
+                            Log.e(TAG, "Failed to select key store ${keyStore.name}", e)
                         }
                     }
                 },
@@ -806,22 +808,28 @@ private fun BackgroundReplace() {
             return@rememberLauncherForActivityResult
         }
 
-        try {
-            val target = File(
-                context.filesDir,
-                "page_background_${System.currentTimeMillis()}.img"
-            )
+        scope.launch {
+            try {
+                // 复制可能很大，放到 IO 线程；Configs.applyBackgroundImage 写的是 Compose
+                // 状态，所以回到主线程后再调用。
+                val target = withContext(Dispatchers.IO) {
+                    val file = File(
+                        context.filesDir,
+                        "page_background_${System.currentTimeMillis()}.img"
+                    )
 
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                target.outputStream().use { output ->
-                    input.copyTo(output)
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        file.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    } ?: throw IOException("No data")
+
+                    file
                 }
-            } ?: throw IOException("No data")
 
-            Configs.applyBackgroundImage(target.absolutePath)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error when reading background image", e)
-            scope.launch {
+                Configs.applyBackgroundImage(target.absolutePath)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error when reading background image", e)
                 snackbarHost.showSnackbar(errorText)
             }
         }

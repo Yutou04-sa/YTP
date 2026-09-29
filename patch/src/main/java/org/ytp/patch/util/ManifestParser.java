@@ -96,19 +96,15 @@ public class ManifestParser {
                                 activity_names.add(activityName);
                             }
                         }
-
-//                        if (packageName != null && packageName.length() > 0 &&
-//                                appComponentFactory != null && appComponentFactory.length() > 0 &&
-//                                minSdkVersion > 0
-//                        ) {
-//                            return new Pair(packageName, appComponentFactory, minSdkVersion);
-//                        }
                     }
                 } else if (type == AxmlParser.END_TAG) {
                     // ignored
                 }
             }
         } catch (Exception e) {
+            // 解析失败仍然返回 null，但不再静默吞掉真实原因
+            System.err.println("ManifestParser: failed to parse AndroidManifest.xml: " + e);
+            e.printStackTrace(System.err);
             return null;
         }
 

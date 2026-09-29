@@ -46,9 +46,17 @@ public class LocalApplicationService extends ILSPApplicationService.Stub {
         try {
             loadExternalModule();
             loadAssetsModule();
-        } catch (IOException e) {
+        } catch (Throwable e) {
+            // Best effort: an exception here would otherwise kill the patched app on startup.
             Log.e(TAG, "Error when initializing LocalApplicationServiceClient", e);
         }
+    }
+
+    /** Package names taken from assets/config are used to build paths and zip entries. */
+    private static boolean isSafePackageName(String packageName) {
+        return packageName != null && !packageName.isEmpty()
+                && !packageName.contains("/") && !packageName.contains("\\")
+                && !packageName.contains("..");
     }
 
     private void loadAssetsModule() throws IOException {
@@ -62,6 +70,10 @@ public class LocalApplicationService extends ILSPApplicationService.Stub {
 
         for (String fileName : moduleNames) {
             String packageName = fileName.contains(".")?fileName.substring(0, fileName.lastIndexOf(".")) : fileName;
+            if(!isSafePackageName(packageName)){
+                Log.w(TAG, "Skipping module with an unsafe package name: " + fileName);
+                continue;
+            }
             if(loaded.contains(packageName) && fileName.endsWith(".apk")){
                 continue;
             }
@@ -91,6 +103,10 @@ public class LocalApplicationService extends ILSPApplicationService.Stub {
             module.apkPath = cacheApkPath;
             module.packageName = packageName;
             module.file = ModuleLoader.loadModule(cacheApkPath);
+            if (module.file == null) {
+                Log.w(TAG, "No Xposed entry point found in assets module " + packageName + ", skipping");
+                return;
+            }
             addModule(module);
             Log.i(TAG, "Loaded assets module: " + packageName + " from " + cacheApkPath);
         }
@@ -103,15 +119,22 @@ public class LocalApplicationService extends ILSPApplicationService.Stub {
             try {
                 bytes = Files.readAllBytes(moduleConfigPath);
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                // Must not escape: this is called from the constructor and a throwing
+                // constructor would crash the patched app.
+                Log.e(TAG, "Cannot read " + moduleConfigPath, e);
+                return;
             }
-            if(bytes == null || bytes.length == 0) return;
+            if(bytes.length == 0) return;
             String config = new String(bytes);
-            // 解析JSON
+            // 逗号分隔的模块包名列表
             String[] appList = config.split(",");
             PackageManager pm = context.getPackageManager();
             for (String packageName : appList) {
                 if(packageName.isEmpty()) continue;
+                if(!isSafePackageName(packageName)){
+                    Log.w(TAG, "Skipping module with an unsafe package name: " + packageName);
+                    continue;
+                }
                 try {
                     ApplicationInfo appInfo = pm.getApplicationInfo(packageName, 0);
                     Module module = loadExternalModule(appInfo.sourceDir,packageName);
@@ -119,7 +142,9 @@ public class LocalApplicationService extends ILSPApplicationService.Stub {
                         addModule(module);
                         Log.d(TAG, "Loaded external module: " + packageName + " from " + appInfo.sourceDir);
                     }
-                }catch (Exception ignored){}
+                }catch (Exception e){
+                    Log.w(TAG, "Cannot load external module " + packageName, e);
+                }
             }
         }
     }
@@ -147,6 +172,10 @@ public class LocalApplicationService extends ILSPApplicationService.Stub {
             module.apkPath = apkPath;
             module.packageName = packageName;
             module.file = ModuleLoader.loadModule(apkPath);
+            if (module.file == null) {
+                Log.w(TAG, "No Xposed entry point in " + apkPath);
+                return null;
+            }
             loaded.add(packageName);
             return module;
         } catch (Exception e) {

@@ -58,6 +58,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
@@ -89,7 +90,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        lspApp.globalScope.launch {
+        // 生命周期作用域 + 主线程：更新结果要写 Compose 状态，必须回到主线程，
+        // 并且 Activity 销毁后不能再继续写状态。
+        lifecycleScope.launch {
             val update = UpdateChecker.checkUpdate()
             if (update != null) {
                 updateInfo = update

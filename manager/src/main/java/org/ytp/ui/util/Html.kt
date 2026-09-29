@@ -29,13 +29,18 @@ fun Html(
         modifier = modifier,
         factory = { context ->
             WebView(context).apply {
-                webViewClient = WebViewClient()
-
-                // 核心：链接跳外部浏览器
+                // 核心：http/https 链接跳外部浏览器，其余 scheme 一律拦截
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
                         if (url == null) return false
-                        // 所有链接都用外部浏览器打开
+                        // 只放行 http/https：intent://、file://、自定义 scheme 等一律拦下，
+                        // 否则渲染的 HTML 可以借 startActivity 拉起任意组件。
+                        if (!url.startsWith("http://", ignoreCase = true) &&
+                            !url.startsWith("https://", ignoreCase = true)
+                        ) {
+                            return true // 告诉WebView自己不处理
+                        }
+                        // 普通网页链接都用外部浏览器打开
                         val intent = Intent(Intent.ACTION_VIEW, url.toUri())
                         context.startActivity(intent)
                         return true // 告诉WebView自己不处理

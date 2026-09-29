@@ -1,5 +1,6 @@
 package org.ytp.util
 
+import android.util.Log
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -10,6 +11,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object UpdateChecker {
+
+    private const val TAG = "UpdateChecker"
     
     /**
      * 更新检查地址。本 fork 不提供自己的 update2 服务，故留空 => 启动时不会发起任何网络请求、
@@ -44,7 +47,7 @@ object UpdateChecker {
                     null
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e(TAG, "Failed to check for updates", e)
                 null
             }
         }

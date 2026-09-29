@@ -117,11 +117,18 @@ fun HomeScreen(navigator: DestinationsNavigator) {
         if (
             !isIntentLaunched &&
             intent?.action == Intent.ACTION_VIEW &&
-            intent.hasCategory(Intent.CATEGORY_DEFAULT) &&
-            intent.type == "application/vnd.android.package-archive"
+            intent.hasCategory(Intent.CATEGORY_DEFAULT)
         ) {
-            isIntentLaunched = true
-            intent.data?.let { uri ->
+            val uri = intent.data
+            // 只接受安装包来源：content/file scheme，且 mime 是 APK 或路径以 .apk 结尾。
+            // 其余（intent://、自定义 scheme、其它 mime/后缀）一律忽略，
+            // 避免外部 intent 把任意文件塞进安装流程。
+            val schemeAllowed = uri?.scheme.equals("content", ignoreCase = true) == true ||
+                uri?.scheme.equals("file", ignoreCase = true) == true
+            val looksLikeApk = intent.type == "application/vnd.android.package-archive" ||
+                uri?.lastPathSegment?.endsWith(".apk", ignoreCase = true) == true
+            if (uri != null && schemeAllowed && looksLikeApk) {
+                isIntentLaunched = true
                 navigator.navigate(
                     NewPatchScreenDestination(
                         id = ACTION_INTENT_INSTALL,
