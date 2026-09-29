@@ -108,7 +108,7 @@ jobs:
           for apk in out/release/*.apk; do
             echo "== $apk"
             report="$RUNNER_TEMP/apksigner-$(basename "$apk").txt"
-            if ! "$apksigner" verify --verbose --print-certs "$apk" > "$report" 2>&1; then
+            if ! "$apksigner" verify --verbose --print-certs --min-sdk-version 24 "$apk" > "$report" 2>&1; then
               cat "$report"
               if [ -n "${SIGNING_KEYSTORE_BASE64:-}" ]; then
                 echo "::error::$apk failed apksigner verification"
@@ -118,15 +118,25 @@ jobs:
               continue
             fi
             grep -i "certificate SHA-256 digest" "$report" || true
-            actual=$(grep -i "Signer #1 certificate SHA-256 digest" "$report" | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
-            if [ -n "${SIGNING_KEYSTORE_BASE64:-}" ] && [ -n "${SIGNING_CERT_SHA256:-}" ]; then
-              expected=$(echo "${SIGNING_CERT_SHA256}" | tr -d ':' | tr 'A-F' 'a-f')
-              if [ "$actual" != "$expected" ]; then
-                echo "::error::$apk is signed by ${actual}, expected ${expected}"
+            # build-tools 37 prefixes the digest lines with the scheme ("V3.0 Signer:"),
+            # older ones use "Signer #1", so match on the digest name alone.
+            actual=$(grep -i "certificate SHA-256 digest" "$report" | head -n 1 | awk '{print $NF}' | tr -d ':\r' | tr 'A-F' 'a-f')
+            if [ -n "${SIGNING_KEYSTORE_BASE64:-}" ]; then
+              if [ -z "$actual" ]; then
+                echo "::error::could not read the certificate SHA-256 digest of $apk from the apksigner report"
+                cat "$report"
                 exit 1
               fi
-            elif [ -n "${SIGNING_KEYSTORE_BASE64:-}" ]; then
-              echo "::warning::SIGNING_CERT_SHA256 is not set, the signer of $apk was not verified"
+              if [ -z "${SIGNING_CERT_SHA256:-}" ]; then
+                echo "::warning::SIGNING_CERT_SHA256 is not set, the signer of $apk was not verified"
+              else
+                expected=$(echo "${SIGNING_CERT_SHA256}" | tr -d ':' | tr 'A-F' 'a-f')
+                if [ "$actual" != "$expected" ]; then
+                  echo "::error::$apk is signed by ${actual}, expected ${expected}"
+                  exit 1
+                fi
+                echo "::notice::$apk is signed by ${actual}"
+              fi
             fi
           done
 
