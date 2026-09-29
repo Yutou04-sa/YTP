@@ -34,6 +34,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.result.ResultBackNavigator
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import org.ytp.R
 import org.ytp.ui.component.AppItem
@@ -217,6 +220,9 @@ fun SelectAppsScreen(
     }
 }
 
+/** 多选时每个应用额外要显示的版本名/描述，由后台线程填充。 */
+private data class AppExtra(val version: String, val description: String?)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AppsList(
@@ -226,6 +232,25 @@ private fun AppsList(
     onSingleSelect: (LSPPackageManager.AppInfo) -> Unit,
     onToggle: (LSPPackageManager.AppInfo, Boolean) -> Unit
 ) {
+    // getVersionName/getDescription 都是 PackageManager IPC + 读 metaData，不能放在 composition
+    // 里对每个可见项调用（滚动时会掉帧）。这里在后台线程算一次，结果放进快照状态。
+    val extras = remember { mutableStateMapOf<String, AppExtra>() }
+    LaunchedEffect(apps, multiSelect) {
+        if (!multiSelect) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            apps.forEach { appInfo ->
+                val packageName = appInfo.app.packageName
+                if (!extras.containsKey(packageName)) {
+                    val version = runCatching { LSPPackageManager.getVersionName(packageName) }
+                        .getOrNull() ?: ""
+                    val description = runCatching { LSPPackageManager.getDescription(appInfo) }
+                        .getOrNull()
+                    extras[packageName] = AppExtra(version, description)
+                }
+            }
+        }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(top = 4.dp, bottom = if (multiSelect) 96.dp else 20.dp)
@@ -233,6 +258,7 @@ private fun AppsList(
         items(items = apps, key = { it.app.packageName }) { appInfo ->
             val checked = appInfo in selected
             val disabled = multiSelect && appInfo.isXposedModule == "100"
+            val extra = if (multiSelect) extras[appInfo.app.packageName] else null
             AppItem(
                 modifier = Modifier
                     .animateItem(spring(stiffness = Spring.StiffnessLow))
@@ -242,8 +268,8 @@ private fun AppsList(
                 icon = LSPPackageManager.getIcon(appInfo),
                 label = appInfo.label,
                 packageName = appInfo.app.packageName,
-                versionName = if (multiSelect) LSPPackageManager.getVersionName(appInfo.app.packageName) else null,
-                description = if (multiSelect) LSPPackageManager.getDescription(appInfo) else null,
+                versionName = extra?.version,
+                description = extra?.description,
                 targetApiVersion = if (multiSelect) appInfo.isXposedModule else null,
                 disabled = disabled,
                 checked = if (multiSelect) checked else null,

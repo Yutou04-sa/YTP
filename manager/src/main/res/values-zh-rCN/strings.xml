@@ -173,6 +173,7 @@
     <string name="patched_apps_repatch">重新修补</string>
     <string name="patch_repatch_no_backup">没有可用的原包备份</string>
     <string name="patched_apps_no_backup">没有原包备份</string>
+    <string name="patched_apps_storage_permission_failed">无法保留所选目录的访问权限，请重新选择。</string>
     <!--Module management actions-->
     <string name="module_action_more">更多操作</string>
     <string name="module_action_open">打开模块</string>

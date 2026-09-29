@@ -71,6 +71,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1182,7 +1183,9 @@ private fun DoPatchBody(modifier: Modifier, navigator: DestinationsNavigator) {
     val viewModel = viewModel<NewPatchViewModel>()
     val snackbarHost =org.ytp.ui.util.LocalSnackbarHost.current
     val scope = rememberCoroutineScope()
-    var showInstallDialog by remember { mutableStateOf(false) }
+    // 用 rememberSaveable 以便旋转/重建后安装对话框状态和安装触发标记都能保留，
+    // 不会因为重建而重新触发一次安装。
+    var showInstallDialog by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         if (viewModel.logs.isEmpty()) {
@@ -1369,7 +1372,12 @@ private fun InstallDialog2(patchApp: org.ytp.util.LSPPackageManager.AppInfo, onF
         onFinish(result.status, result.message)
     }
 
+    // 安装副作用不能跟着 composition 反复触发：旋转/重建会取消正在跑的协程，
+    // 这里用 rememberSaveable 记住"这个 patch 结果已经触发过安装"，只跑一次。
+    var installTriggered by rememberSaveable(patchApp.app.packageName) { mutableStateOf(false) }
     LaunchedEffect(patchApp.app.packageName) {
+        if (installTriggered) return@LaunchedEffect
+        installTriggered = true
         Log.d(TAG, "State changed to install, starting installation via system.")
         doInstall()
     }

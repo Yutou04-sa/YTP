@@ -13,8 +13,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.content.IntentCompat
 import androidx.core.net.toUri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -144,12 +146,18 @@ suspend fun installApks(context: Context, apkFiles: List<File>): InstallResult =
                 IntentFilter(ACTION_INSTALL_RESULT),
                 ContextCompat.RECEIVER_NOT_EXPORTED,
             )
+            var session: PackageInstaller.Session? = null
+            // Only true once commit() returned: after that the installer owns the session and it
+            // must not be abandoned any more.
+            var committed = false
             try {
-                installer.openSession(sessionId).use { session ->
+                val opened = installer.openSession(sessionId)
+                session = opened
+                opened.use { active ->
                     files.forEach { file ->
-                        session.openWrite(file.name, 0, file.length()).use { output ->
+                        active.openWrite(file.name, 0, file.length()).use { output ->
                             file.inputStream().use { input -> input.copyTo(output) }
-                            session.fsync(output)
+                            active.fsync(output)
                         }
                     }
                     val callback = Intent(ACTION_INSTALL_RESULT).setPackage(context.packageName)
@@ -159,7 +167,12 @@ suspend fun installApks(context: Context, apkFiles: List<File>): InstallResult =
                         callback,
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
                     )
-                    session.commit(pendingIntent.intentSender)
+                    // The commit itself must survive a cancelled caller, otherwise the session can
+                    // be left half-committed and leak.
+                    withContext(NonCancellable) {
+                        active.commit(pendingIntent.intentSender)
+                        committed = true
+                    }
                 }
                 // Silence here does not mean failure: the install may still be running.
                 withTimeoutOrNull(INSTALL_TIMEOUT_MS) { result.await() }
@@ -167,9 +180,20 @@ suspend fun installApks(context: Context, apkFiles: List<File>): InstallResult =
                         PackageInstaller.STATUS_PENDING_USER_ACTION,
                         "The installer did not report a result in time",
                     )
+            } catch (e: Exception) {
+                // Failure or cancellation before the commit: give the session back so the copied
+                // apk bytes and the session slot are released instead of leaking.
+                if (!committed) {
+                    runCatching { withContext(NonCancellable) { session?.abandon() } }
+                }
+                throw e
             } finally {
                 runCatching { context.unregisterReceiver(receiver) }
             }
+        } catch (e: CancellationException) {
+            // 调用方被取消（例如旋转屏幕）时必须继续向上传播，
+            // 上面已经 abandon 了未提交的 session。
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to install ${files.joinToString { it.name }}", e)
             InstallResult(PackageInstaller.STATUS_FAILURE, e.message)

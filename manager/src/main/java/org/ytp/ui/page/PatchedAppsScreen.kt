@@ -2,6 +2,7 @@ package org.ytp.ui.page
 
 import android.app.Activity
 import android.content.Intent
+import android.os.SystemClock
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -81,8 +82,18 @@ import org.ytp.util.LSPPackageManager
 import org.ytp.util.OriginApkStore
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 
 private const val TAG = "PatchedAppsScreen"
+
+/**
+ * 刚扫完不到这个时间就不要再扫一遍：fetchAppList() 会遍历所有已安装应用并解析 apk，
+ * 旋转屏幕、返回本页这类连续的 ON_RESUME 没必要重复扫描。
+ */
+private const val MIN_REFRESH_INTERVAL_MS = 5_000L
+
+private fun isRefreshDue(lastRefreshAt: AtomicLong): Boolean =
+    SystemClock.elapsedRealtime() - lastRefreshAt.get() > MIN_REFRESH_INTERVAL_MS
 
 private data class PatchedApp(
     val app: LSPPackageManager.AppInfo,
@@ -142,11 +153,17 @@ fun PatchedAppsScreen(navigator: DestinationsNavigator) {
         if (packageName == null || result.resultCode != Activity.RESULT_OK || treeUri == null) {
             return@rememberLauncherForActivityResult
         }
-        runCatching {
+        // Persisting the grant can fail (revoked/expired URI). Only remember the directory when
+        // it actually succeeded, otherwise patching would fail much later with no explanation.
+        val persisted = runCatching {
             context.contentResolver.takePersistableUriPermission(
                 treeUri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
+        }.isSuccess
+        if (!persisted) {
+            scope.launch { snackbarHost.showSnackbar(context.getString(R.string.patched_apps_storage_permission_failed)) }
+            return@rememberLauncherForActivityResult
         }
         Configs.storageDirectory = treeUri.toString()
         navigator.navigate(
@@ -156,12 +173,17 @@ fun PatchedAppsScreen(navigator: DestinationsNavigator) {
 
     // Returning to this screen (after patching, uninstalling or installing something) always
     // shows fresh data, so the list refreshes itself instead of offering a refresh button.
+    // fetchAppList() walks every installed app and parses its apk, so a resume that comes right
+    // after a refresh (e.g. rotation, or a dialog round-trip) does not need another scan.
     var initialised by remember { mutableStateOf(false) }
+    val lastRefreshAt = remember { AtomicLong(0L) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                if (initialised) refreshKey++ else initialised = true
+                val firstResume = !initialised
+                initialised = true
+                if (!firstResume && isRefreshDue(lastRefreshAt)) refreshKey++
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -203,6 +225,7 @@ fun PatchedAppsScreen(navigator: DestinationsNavigator) {
             }
         }
         loading = false
+        lastRefreshAt.set(SystemClock.elapsedRealtime())
     }
 
     Scaffold(

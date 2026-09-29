@@ -25,6 +25,11 @@ fun Html(
     val themedHtml = remember(html, isDarkTheme) {
         if (isDarkTheme) html.withDarkThemeStyles() else html
     }
+    // Remembers what is currently loaded in the WebView. `update` runs on every recomposition
+    // (scroll, theme change, ...), so the HTML is (re)loaded only when it actually changed.
+    // It starts as null so the first `update` right after the factory always performs the load.
+    var lastLoadedHtml: String? = null
+
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -82,14 +87,23 @@ fun Html(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 webView.settings.setAlgorithmicDarkeningAllowed(false)
             }
-            // 加载 HTML（自动支持 img、样式、链接）
-            webView.loadDataWithBaseURL(
-                null,
-                themedHtml,
-                "text/html; charset=UTF-8",
-                "UTF-8",
-                null
-            )
+            // 加载 HTML（自动支持 img、样式、链接），仅在内容真的变化时重新加载
+            if (lastLoadedHtml != themedHtml) {
+                lastLoadedHtml = themedHtml
+                webView.loadDataWithBaseURL(
+                    null,
+                    themedHtml,
+                    "text/html; charset=UTF-8",
+                    "UTF-8",
+                    null
+                )
+            }
+        },
+        onRelease = { webView ->
+            // Leaving composition (e.g. scrolling away in a LazyColumn): free the native
+            // WebView instead of leaking it, then force a reload if it ever comes back.
+            lastLoadedHtml = null
+            webView.destroy()
         }
     )
 }

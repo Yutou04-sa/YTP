@@ -176,6 +176,7 @@
     <string name="patched_apps_repatch">Re-patch</string>
     <string name="patch_repatch_no_backup">No original apk backup available</string>
     <string name="patched_apps_no_backup">No original apk backed up</string>
+    <string name="patched_apps_storage_permission_failed">Cannot keep access to the selected folder. Please pick it again.</string>
     <!--Module management actions-->
     <string name="module_action_more">More actions</string>
     <string name="module_action_open">Open module</string>

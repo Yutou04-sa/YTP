@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -150,7 +151,9 @@ fun RepoScreen(
                         ),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(state.modules, key = { it.name }) { module ->
+                        // The repo JSON is remote data: duplicate `name` values would crash the
+                        // list with "Key ... was already used", so the index keeps keys unique.
+                        itemsIndexed(state.modules, key = { index, module -> "$index-${module.name}" }) { _, module ->
                             ModuleItem(module) {
                                 navigator.navigate(ModuleDetailScreenDestination(module))
                             }

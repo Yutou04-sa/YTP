@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.ytp.lspApp
 import org.ytp.model.XposedModule
@@ -23,20 +25,28 @@ import java.util.Locale
 class RepoViewModel : ViewModel() {
     companion object {
         private const val TAG = "RepoViewModel"
-        private var RepoURL = lspApp.updateInfo?.repoURL ?: "https://backup.modules.lsposed.org"
-        private val MODULE_JSON_URL = "${RepoURL}/modules.json"
-        private val MODULE_DETAIL_URL = "${RepoURL}/module/%s.json"
+        private const val DEFAULT_REPO_URL = "https://backup.modules.lsposed.org"
         private const val PREFS_NAME = "repo_cache"
         private const val KEY_MODULES_CACHE = "modules_cache"
+
+        // updateInfo 可能在类初始化时还没准备好，所以仓库地址在每次调用时惰性读取。
+        private val RepoURL: String
+            get() = lspApp.updateInfo?.repoURL ?: DEFAULT_REPO_URL
+        private val MODULE_JSON_URL: String
+            get() = "${RepoURL}/modules.json"
+        private val MODULE_DETAIL_URL: String
+            get() = "${RepoURL}/module/%s.json"
     }
 
     private val gson = Gson()
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
     private val prefs = lspApp.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
 
     // 全局缓存
     private var cachedModules: List<XposedModule> = emptyList()
     private var installedModulePackageNames: Map<String, LSPPackageManager.AppInfo> = emptyMap()
+
+    // 筛选/排序会做 binder 调用，串行化以免并发任务互相覆盖状态
+    private val filterSortMutex = Mutex()
 
     // UI 状态
     private val _uiState = MutableStateFlow<RepoUiState>(RepoUiState.Loading)
@@ -51,29 +61,36 @@ class RepoViewModel : ViewModel() {
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
     /**
-     * 从 SharedPreferences 加载缓存数据
+     * 从 SharedPreferences 加载缓存数据。返回 true 表示拿到了可用缓存（UI 已显示出来）。
      */
-    private fun loadFromCache() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                _isRefreshing.value = true
-                val cachedJson = prefs.getString(KEY_MODULES_CACHE, null)
-                if (!cachedJson.isNullOrEmpty()) {
-                    val modules = gson.fromJson(cachedJson, Array<XposedModule>::class.java).toList()
-                    // 恢复解析后的字段
-                    modules.forEach {
-                        it.parsedTime = parseDate(it.latestReleaseTime)
-                        it.formattedDate = formatDateForUI(it.latestReleaseTime)
-                        it.latestVersionCode = parseVersionCode(it.latestRelease)
-                    }
-                    cachedModules = modules
-                    applyFilterAndSort()
-                }
-            } catch (e: Exception) {
-                // 缓存解析失败，忽略，等待网络请求
-            }finally {
-                _isRefreshing.value = false
+    private suspend fun loadFromCache(): Boolean {
+        return try {
+            _isRefreshing.value = true
+            val cachedJson = withContext(Dispatchers.IO) {
+                prefs.getString(KEY_MODULES_CACHE, null)
             }
+            if (cachedJson.isNullOrEmpty()) {
+                false
+            } else {
+                val modules = withContext(Dispatchers.IO) {
+                    gson.fromJson(cachedJson, Array<XposedModule>::class.java).toList()
+                }
+                // 恢复解析后的字段
+                modules.forEach {
+                    it.parsedTime = parseDate(it.latestReleaseTime)
+                    it.formattedDate = formatDateForUI(it.latestReleaseTime)
+                    it.latestVersionCode = parseVersionCode(it.latestRelease)
+                }
+                cachedModules = modules
+                // 已经在 IO 线程上，直接排序以便缓存立刻可见
+                applyFilterAndSort()
+                true
+            }
+        } catch (e: Exception) {
+            // 缓存解析失败，忽略，等待网络请求
+            false
+        } finally {
+            _isRefreshing.value = false
         }
     }
 
@@ -93,15 +110,21 @@ class RepoViewModel : ViewModel() {
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
+            // 1. 先拿本机已安装模块，缓存里的"已安装"标记才算得对
             loadInstalledModules()
+            // 2. 同步等待缓存读完：读完 cachedModules 才一定可用，才知道网络请求要不要发
+            loadFromCache()
+            // 3. 有缓存就在后台静默更新，没缓存才显示 Loading 等待网络
+            loadModules(forceLoading = cachedModules.isEmpty())
         }
-        // 优先从缓存加载，然后后台静默更新
-        loadFromCache()
-        loadModules(cachedModules.isEmpty())
     }
     private fun loadInstalledModules() {
-        installedModulePackageNames = LSPPackageManager.appList
-            .filter { it.isXposedModule.isNotEmpty() }.associateBy { it.app.packageName }
+        try {
+            installedModulePackageNames = LSPPackageManager.appList
+                .filter { it.isXposedModule.isNotEmpty() }.associateBy { it.app.packageName }
+        } catch (e: Exception) {
+            installedModulePackageNames = emptyMap()
+        }
     }
 
     /**
@@ -109,14 +132,17 @@ class RepoViewModel : ViewModel() {
      * @param isRefresh 是否下拉刷新
      */
     fun loadModules(isRefresh: Boolean = false) {
-        viewModelScope.launch {
-            // 非静默更新且非刷新时才显示 Loading
-            if (!isRefresh) _uiState.value = RepoUiState.Loading
-            if (isRefresh) _isRefreshing.value = true
+        // 下拉刷新时不该把已经显示出来的列表换成 Loading，静默更新同理
+        loadModules(forceLoading = !isRefresh, showRefreshingIndicator = isRefresh)
+    }
 
-            val result = withContext(Dispatchers.IO) {
-                try {
-                    if (isRefresh) loadInstalledModules()
+    private fun loadModules(forceLoading: Boolean, showRefreshingIndicator: Boolean = false) {
+        // 状态在主线程同步设置，避免协程真正启动前 UI 停留在旧状态
+        if (forceLoading) _uiState.value = RepoUiState.Loading
+        if (showRefreshingIndicator) _isRefreshing.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = try {
+                    if (showRefreshingIndicator) loadInstalledModules()
 
                     val url = URL(MODULE_JSON_URL)
                     val connection = url.openConnection() as HttpURLConnection
@@ -153,15 +179,17 @@ class RepoViewModel : ViewModel() {
                 } catch (e: Exception) {
                     Result.failure(Exception("Loading failed"))
                 }
-            }
 
             result.onSuccess {
                 applyFilterAndSort()
             }.onFailure { error ->
-                _uiState.value = RepoUiState.Error(error.message ?: "error")
+                // 网络失败时如果本地已有缓存内容，就继续展示缓存，不要用 Error 覆盖掉
+                if (cachedModules.isEmpty()) {
+                    _uiState.value = RepoUiState.Error(error.message ?: "error")
+                }
             }
 
-            if (isRefresh) _isRefreshing.value = false
+            if (showRefreshingIndicator) _isRefreshing.value = false
         }
     }
 
@@ -170,7 +198,7 @@ class RepoViewModel : ViewModel() {
      */
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query
-        applyFilterAndSort()
+        refreshFiltered()
     }
 
     /**
@@ -178,13 +206,23 @@ class RepoViewModel : ViewModel() {
      */
     fun setSortType(type: Int) {
         _sortType.value = type
-        applyFilterAndSort()
+        refreshFiltered()
+    }
+
+    /**
+     * 在主线程之外重新做筛选/排序：里面每个已安装模块都会走一次 binder 调用（getVersionCode），
+     * 放在主线程会卡顿。
+     */
+    private fun refreshFiltered() {
+        viewModelScope.launch(Dispatchers.Default) { applyFilterAndSort() }
     }
 
     /**
      * 统一筛选排序（超级快）
+     * 注意：会做 binder 调用，只应在 Dispatchers.IO/Default 上调用。
      */
-    private fun applyFilterAndSort() {
+    private suspend fun applyFilterAndSort() {
+        filterSortMutex.withLock {
         val query = _searchQuery.value.lowercase()
         val sortType = _sortType.value
 
@@ -209,7 +247,7 @@ class RepoViewModel : ViewModel() {
 
         // 4. 标记已安装
         sortedInstalled.forEach {
-            val versionCode = LSPPackageManager.getVersionCode(it.name)
+            val versionCode = runCatching { LSPPackageManager.getVersionCode(it.name) }.getOrDefault(0L)
             it.installed = if (versionCode != 0L) versionCode.toString() else ""
             it.isUpdate = it.latestVersionCode?.let { latestVersionCode ->
                 latestVersionCode > versionCode && versionCode != 0L
@@ -219,6 +257,7 @@ class RepoViewModel : ViewModel() {
 
         // 5. 更新UI
         _uiState.value = RepoUiState.Success(sortedInstalled + sortedNotInstalled)
+        }
     }
 
     /**
@@ -243,7 +282,8 @@ class RepoViewModel : ViewModel() {
     private fun parseDate(dateStr: String?): Long {
         if (dateStr.isNullOrBlank()) return 0L
         return try {
-            dateFormat.parse(dateStr)?.time ?: 0L
+            // SimpleDateFormat 不是线程安全的，这里每次调用新建，避免 IO/Main 线程共享
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).parse(dateStr)?.time ?: 0L
         } catch (e: Exception) {
             0L
         }

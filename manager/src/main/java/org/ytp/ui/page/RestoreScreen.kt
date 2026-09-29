@@ -3,6 +3,7 @@ package org.ytp.ui.page
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -68,9 +69,12 @@ import java.io.File
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 
 private data class RestoreItem(
     val backup: OriginApkStore.Backup,
+    /** 补丁实际安装在系统里的包名：改过包名的补丁用它，否则就是备份的原包名。 */
+    val installedName: String,
     val installed: Boolean,
     val patched: Boolean
 )
@@ -91,6 +95,8 @@ fun RestoreScreen(navigator: DestinationsNavigator) {
     var refreshKey by remember { mutableIntStateOf(0) }
     var pendingDelete by remember { mutableStateOf<OriginApkStore.Backup?>(null) }
     var pendingExtract by remember { mutableStateOf<OriginApkStore.Backup?>(null) }
+    // 每次扫描都会对每个备份做 PackageManager 查询，刚扫完就别再扫（旋转/快速前后台切换）。
+    val refreshedAt = remember { AtomicLong(0L) }
 
     LaunchedEffect(refreshKey) {
         if (items.isEmpty()) loading = true
@@ -100,12 +106,14 @@ fun RestoreScreen(navigator: DestinationsNavigator) {
                 val installedName = backup.patchedPackageName.ifEmpty { backup.packageName }
                 RestoreItem(
                     backup = backup,
+                    installedName = installedName,
                     installed = OriginApkStore.isInstalled(installedName),
                     patched = OriginApkStore.isPatchedInstalled(installedName)
                 )
             }
         }
         loading = false
+        refreshedAt.set(SystemClock.elapsedRealtime())
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -115,7 +123,7 @@ fun RestoreScreen(navigator: DestinationsNavigator) {
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
                     resumed = true
-                    refreshKey++
+                    if (isRestoreRefreshDue(refreshedAt)) refreshKey++
                 }
 
                 Lifecycle.Event.ON_PAUSE -> resumed = false
@@ -130,7 +138,8 @@ fun RestoreScreen(navigator: DestinationsNavigator) {
     LaunchedEffect(resumed) {
         while (resumed) {
             delay(AUTO_REFRESH_INTERVAL_MS)
-            refreshKey++
+            // 上一次扫描还没结束（或者刚刚结束）就跳过这一轮，避免扫描任务堆积。
+            if (isRestoreRefreshDue(refreshedAt)) refreshKey++
         }
     }
 
@@ -186,7 +195,7 @@ fun RestoreScreen(navigator: DestinationsNavigator) {
                 items(items, key = { it.backup.packageName }) { item ->
                     RestoreCard(
                         item = item,
-                        onUninstall = { uninstallApk(context, item.backup.packageName) },
+                        onUninstall = { uninstallApk(context, item.installedName) },
                         onInstall = { files ->
                             // installApks 现在是 suspend 且返回真实安装状态：交给安装器（含等待用户确认）
                             // 与安装成功都算"已交给系统安装器"，其它状态才报安装失败。
@@ -384,7 +393,15 @@ private fun RestoreStateChip(item: RestoreItem) {
     }
 }
 
-private const val AUTO_REFRESH_INTERVAL_MS = 2_000L
+// 备份列表的自动刷新间隔。每次刷新都要遍历备份并对每项做 PackageManager 查询，
+// 2 秒一次太频繁，10 秒既能保持同步又不会持续占用磁盘/主线程。
+private const val AUTO_REFRESH_INTERVAL_MS = 10_000L
+
+/** 距离上次扫描完成至少要过这么久才允许再扫一次。 */
+private const val MIN_RESTORE_REFRESH_INTERVAL_MS = 5_000L
+
+private fun isRestoreRefreshDue(refreshedAt: AtomicLong): Boolean =
+    SystemClock.elapsedRealtime() - refreshedAt.get() > MIN_RESTORE_REFRESH_INTERVAL_MS
 
 private fun formatSize(bytes: Long): String = when {
     bytes >= 1024L * 1024L * 1024L -> String.format(Locale.US, "%.2f GB", bytes / 1073741824.0)

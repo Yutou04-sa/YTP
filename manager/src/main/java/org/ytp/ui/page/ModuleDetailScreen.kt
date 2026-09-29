@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -217,7 +218,12 @@ private fun ReleasesTab(releases: List<Release>) {
         contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 30.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(releases, key = { "${it.name}-${it.publishedAt}" }) { release ->
+        // Remote data: two releases can share name + publishedAt, which would crash the list with
+        // "Key ... was already used". The index keeps every key unique.
+        itemsIndexed(
+            releases,
+            key = { index, release -> "$index-${release.name}-${release.publishedAt}" },
+        ) { _, release ->
             ReleaseItem(release)
         }
     }
