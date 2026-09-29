@@ -105,7 +105,7 @@ public class LocalApplicationService extends ILSPApplicationService.Stub {
             module.file = ModuleLoader.loadModule(cacheApkPath);
             if (module.file == null) {
                 Log.w(TAG, "No Xposed entry point found in assets module " + packageName + ", skipping");
-                return;
+                continue;
             }
             addModule(module);
             Log.i(TAG, "Loaded assets module: " + packageName + " from " + cacheApkPath);
