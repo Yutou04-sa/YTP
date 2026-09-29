@@ -81,5 +81,22 @@ public class ByteUtil {
         throw new FileNotFoundException(path + " (not in " + dir + ", not on the classpath)");
     }
 
+    /**
+     * Checks whether a resource can be read without opening it for the caller.
+     *
+     * <p>Only the architectures that were actually built are packaged, so the caller has to be
+     * able to skip the ones that are missing instead of failing the whole patch.
+     *
+     * @param path Resource path, e.g. "assets/ytp/so/arm64-v8a/libytp.so"
+     * @return true when {@link #getResourceAsStream(String)} can provide the resource
+     */
+    public static boolean hasResource(String path) {
+        try (InputStream is = getResourceAsStream(path)) {
+            return is != null;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
     private static final String ASSET_ENTRY_PREFIX = "assets/";
 }

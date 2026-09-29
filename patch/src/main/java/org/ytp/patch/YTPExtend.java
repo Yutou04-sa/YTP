@@ -89,7 +89,7 @@ public class YTPExtend extends YTPPatch {
             Map<String, String> packageNameAndOriginalApkPatch = new HashMap<>();
 
             while ((entry = zis.getNextEntry()) != null) {
-                File outputFile = new File(tempDir,entry.getName());
+                File outputFile = resolveEntryFile(entry.getName());
                 // Ensure parent directories exist
                 if (!outputFile.getParentFile().exists() && !outputFile.getParentFile().mkdirs()) {
                     throw new PatchError("Warning: Could not create parent directory for " + outputFile.getAbsolutePath());
@@ -121,6 +121,26 @@ public class YTPExtend extends YTPPatch {
             }
             logger.d("Original APK patch: " + apk.getOriginalApkPatch());
         }
+    }
+
+    /**
+     * Resolves a zip entry to a file below the extraction directory.
+     *
+     * <p>A crafted entry name ("../../shared_prefs/x.xml") would otherwise be written outside of
+     * the temp directory while the apk is being analysed.
+     *
+     * @param entryName Name of the zip entry
+     * @return The file the entry has to be extracted to
+     * @throws IOException when the entry escapes the extraction directory
+     */
+    private File resolveEntryFile(String entryName) throws IOException {
+        File root = tempDir.getCanonicalFile();
+        File outputFile = new File(root, entryName).getCanonicalFile();
+        String rootPath = root.getPath() + File.separator;
+        if (!outputFile.getPath().startsWith(rootPath)) {
+            throw new IOException("ZIP entry escapes extraction directory: " + entryName);
+        }
+        return outputFile;
     }
 
     /**

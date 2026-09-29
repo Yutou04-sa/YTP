@@ -54,6 +54,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeSet;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
@@ -117,6 +118,13 @@ public class YTPPatch {
             "x86",
             "x86_64"
     ));
+
+    /**
+     * Type descriptor of a class that only the metaloader dex defines. Update patches use it to
+     * recognise the dex a previous patch embedded when the dex itself has changed since.
+     */
+    private static final byte[] LOADER_DEX_MARKER =
+            "Landroidx/app/Init;".getBytes(StandardCharsets.US_ASCII);
 
     public static final ZFileOptions Z_FILE_OPTIONS = new ZFileOptions().setAlignmentRule(AlignmentRules.compose(
             AlignmentRules.constantForSuffix(".so", 4096),
@@ -308,8 +316,12 @@ public class YTPPatch {
                 }
                 //收集已有的so架构
                 else if (name.startsWith("lib/") && name.endsWith(".so")) {
-                    String arch = name.substring(4, name.indexOf('/',5));
-                    existingArchitectures.add(arch);
+                    // "lib/foo.so" carries no architecture directory at all, and the old
+                    // substring() call aborted the whole patch with a StringIndexOutOfBounds.
+                    int archEnd = name.indexOf('/', 5);
+                    if (archEnd > 5) {
+                        existingArchitectures.add(name.substring(4, archEnd));
+                    }
                 }
                 //删除v1签名文件
                 else if(name.startsWith("META-INF/") && (name.endsWith(".RSA") || name.endsWith(".SF") || name.endsWith(".MF"))){
@@ -325,21 +337,47 @@ public class YTPPatch {
             if(existingArchitectures.isEmpty()){
                 existingArchitectures.addAll(ARCHES);
             }
-            for (String arch : existingArchitectures) {
+            // Only embed the native libs that are actually built. The patch assets carry a single
+            // architecture on purpose, and requiring all of them made every apk without a lib/
+            // directory - or with any other abi - fail with "Error when adding native lib".
+            var missingArchitectures = new ArrayList<String>();
+            int addedLibs = 0;
+            for (String arch : new TreeSet<>(existingArchitectures)) {
                 String entryName = String.format(LIB_ASSET_PATH,  arch);
+                if (!ByteUtil.hasResource(entryName)) {
+                    missingArchitectures.add(arch);
+                    continue;
+                }
                 try (var is = ByteUtil.getResourceAsStream(entryName)) {
                     srcZFile.add(entryName, is, false);
                 } catch (Throwable e) {
                     throw new PatchError("Error when adding native lib", e);
                 }
                 logger.d(" -Added " + entryName);
+                addedLibs++;
+            }
+            if (addedLibs == 0) {
+                throw new PatchError("No native lib is available for " + missingArchitectures
+                        + ", the apk cannot be patched");
+            }
+            if (!missingArchitectures.isEmpty()) {
+                logger.i(" -Skipped native libs that are not built: " + missingArchitectures);
             }
 
             logger.i("Embedding modules...");
             embedModules(srcZFile);
 
             logger.i("Adding metaloader dex...");
+            final byte[] metaloaderDex;
             try (var is = ByteUtil.getResourceAsStream(Constants.META_LOADER_DEX_ASSET_PATH)) {
+                metaloaderDex = ByteUtil.is2ByteArray(is);
+            } catch (Throwable e) {
+                throw new PatchError("Error when reading dex", e);
+            }
+            if (updatePatch) {
+                removePreviousMetaloaderDex(srcZFile, metaloaderDex);
+            }
+            try (var is = new ByteArrayInputStream(metaloaderDex)) {
                 String targetName = generateUniqueDexFileName(srcZFile);
                 srcZFile.add(targetName, is);
                 logger.d(" -Added " + targetName);
@@ -358,7 +396,20 @@ public class YTPPatch {
         }
         //只有数据复用优化的才会有PatchFile，不需要重命名为输出文件，在数据复用优化模式下，会保存在outputFile中
         if(this.apk.getPatchFile().isEmpty()) {
-            srcApkFile.renameTo(Paths.get(outputFile).toFile());
+            var output = Paths.get(outputFile);
+            if (Files.exists(output) && !forceOverwrite) {
+                logger.i("Overwriting existing output " + outputFile);
+            }
+            // renameTo() reports nothing: on Windows it silently failed when the output already
+            // existed, so the previous - stale - apk was signed again and handed out as the
+            // fresh patch.
+            if (!srcApkFile.getAbsolutePath().equals(outputFile)) {
+                try {
+                    Files.move(srcApkFile.toPath(), output, StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException e) {
+                    throw new PatchError("Failed to move the patched apk to " + outputFile, e);
+                }
+            }
             V2V3SchemeSigner.sign(Paths.get(outputFile).toFile(), new BksSignatureKey(keystoreArgs.get(0), keystoreArgs.get(1), keystoreArgs.get(2), keystoreArgs.get(3)), true, true);
         }
     }
@@ -397,10 +448,101 @@ public class YTPPatch {
             targetName = "classes" + (dexNum == 1 ? "" : dexNum) + ".dex";
             dexNum++;
         } while (zFile.get(targetName) != null);
-        if(updatePatch){
-            targetName = targetName.replace(String.valueOf(dexNum-1),String.valueOf(dexNum-2));
-        }
         return targetName;
+    }
+
+    /**
+     * Update patches re-patch an apk that already carries the metaloader dex, and the previous
+     * code picked the new name with a string replace on the first free slot. That pointed at a
+     * host dex whenever the host numbering has a hole, and overwriting it corrupts the app.
+     * Identify our own dex instead - by content when it is unchanged, by its loader classes
+     * otherwise - and remove it so the slot it used is free again.
+     */
+    private void removePreviousMetaloaderDex(ZFile zFile, byte[] metaloaderDex) {
+        var candidates = new ArrayList<String>();
+        zFile.entries().forEach(entry -> {
+            var name = entry.getCentralDirectoryHeader().getName();
+            if (name.startsWith("classes") && name.endsWith(".dex") && !name.contains("/")) {
+                candidates.add(name);
+            }
+        });
+        for (String name : candidates) {
+            if (!isMetaloaderDex(zFile.get(name), metaloaderDex)) {
+                continue;
+            }
+            try {
+                zFile.get(name).delete();
+                logger.d(" -Removed previous " + name);
+            } catch (IOException e) {
+                logger.e("Failed to delete the previous metaloader dex " + name + ": " + e);
+            }
+            return;
+        }
+        logger.i(" -No previous metaloader dex found");
+    }
+
+    /**
+     * @param entry         dex entry to inspect, may be null
+     * @param metaloaderDex the dex that is about to be embedded
+     * @return true when the entry is a metaloader dex of a previous patch
+     */
+    private boolean isMetaloaderDex(StoredEntry entry, byte[] metaloaderDex) {
+        if (entry == null) {
+            return false;
+        }
+        if (entry.getCentralDirectoryHeader().getUncompressedSize() == metaloaderDex.length) {
+            try (var is = entry.open()) {
+                if (Arrays.equals(ByteUtil.is2ByteArray(is), metaloaderDex)) {
+                    return true;
+                }
+            } catch (IOException e) {
+                logger.e("Failed to read " + entry.getCentralDirectoryHeader().getName() + ": " + e);
+                return false;
+            }
+        }
+        // A patch made by another version carries a different dex, so fall back to the loader
+        // package it defines.
+        try (var is = entry.open()) {
+            return contains(is, LOADER_DEX_MARKER);
+        } catch (IOException e) {
+            logger.e("Failed to read " + entry.getCentralDirectoryHeader().getName() + ": " + e);
+            return false;
+        }
+    }
+
+    /**
+     * Streams the input looking for a byte pattern.
+     */
+    private static boolean contains(InputStream input, byte[] pattern) {
+        byte[] window = new byte[pattern.length + 8192];
+        int kept = 0;
+        int read;
+        while (true) {
+            try {
+                read = input.read(window, kept, window.length - kept);
+            } catch (IOException e) {
+                return false;
+            }
+            if (read <= 0) {
+                return false;
+            }
+            int length = kept + read;
+            for (int i = 0; i + pattern.length <= length; i++) {
+                boolean match = true;
+                for (int j = 0; j < pattern.length; j++) {
+                    if (window[i + j] != pattern[j]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    return true;
+                }
+            }
+            int keep = Math.min(pattern.length - 1, length);
+            System.arraycopy(window, length - keep, window, 0, keep);
+            kept = keep;
+        }
     }
 
     /**
