@@ -1,6 +1,6 @@
-# YTP Framework
+# YTP 框架
 
-[![Android CI](https://github.com/Yutou04-sa/YTP/actions/workflows/android.yml/badge.svg)](https://github.com/Yutou04-sa/YTP/actions/workflows/android.yml) [![Download](https://img.shields.io/github/v/release/Yutou04-sa/YTP?color=orange&logoColor=orange&label=Download&logo=DocuSign)](https://github.com/Yutou04-sa/YTP/releases/latest) [![Total](https://shields.io/github/downloads/Yutou04-sa/YTP/total?logo=Bookmeter&label=Counts&logoColor=yellow&color=yellow)](https://github.com/Yutou04-sa/YTP/releases)
+[![安卓 CI](https://github.com/Yutou04-sa/YTP/actions/workflows/android.yml/badge.svg)](https://github.com/Yutou04-sa/YTP/actions/workflows/android.yml) [![Download](https://img.shields.io/github/v/release/Yutou04-sa/YTP?color=orange&logoColor=orange&label=Download&logo=DocuSign)](https://github.com/Yutou04-sa/YTP/releases/latest) [![Total](https://shields.io/github/downloads/Yutou04-sa/YTP/total?logo=Bookmeter&label=Counts&logoColor=yellow&color=yellow)](https://github.com/Yutou04-sa/YTP/releases)
 
 ## 简介
 
@@ -63,11 +63,12 @@
   标签必须与 `gradle/version.properties` 中的 `verName` 一致。若仓库配置了
   `SIGNING_KEYSTORE_BASE64`、`SIGNING_STORE_PASSWORD`、`SIGNING_KEY_PASSWORD` 三个 secret，工作流
   会为 APK 签名；fork 之后没有这些 secret 也能正常构建并发布未签名 APK。把 `SIGNING_CERT_SHA256`
-  设为你的签名证书 SHA-256（即 apksigner 输出的 `Signer #1 certificate SHA-256 digest`，小写十六
-  进制、不含冒号），一旦签名密钥不符，构建会直接失败而不是发布一个被别人签名的 APK ——
+  设为你的签名证书 SHA-256（即 `apksigner verify --print-certs` 输出里的 `certificate SHA-256
+  digest` 那一行 —— build-tools 37 会写成 `V3.0 Signer: certificate SHA-256 digest: …`；小写
+  十六进制、不含冒号），一旦签名密钥不符，构建会直接失败而不是发布一个被别人签名的 APK ——
   `apksigner verify --print-certs out/release/YTP-*.apk` 可查看当前包的实际摘要。
 
-## 本 fork 的改动
+## 本仓库的改动
 
 + 打补丁**之前**会先把原始 APK 复制到管理器的私有存储。
 + 之后随时可以在 **原始安装包** 页面把它们装回去（安装 / 卸载 / 删除，单 APK 与 split APK 应用
@@ -85,14 +86,14 @@
   （`BuildConfig.APPLICATION_ID`）仍保持原包名。
 + 重命名后的补丁包仍能与它的原始备份对应 —— 新包名记在备份的 `meta.properties` 里，所以重新打
   补丁和“导出原始包”都还能正常工作。
-+ 补丁应用在启动器长按菜单里新增的入口及其背后的页面都叫 **World Gate**：快捷方式由
++ 补丁应用在启动器长按菜单里新增的入口及其背后的页面都叫 **World Gate**（世界之门）：快捷方式由
   `patch-loader/src/main/java/org/ytp/loader/util/ShortcutUtils.java` 注册，页面是
   `share/android/src/main/java/androidx/app/ModuleActivity.java`；管理器自己的页面叫
   **模块** 与 **应用**。它的图标是用 `Bitmap`/`Canvas` 在运行时画出来的一扇门（loader 无法自带
   资源），并且 `ShortcutUtils.SHORTCUT_VERSION` 会在改动后递增，使已打过补丁的应用在下次启动时
   重写快捷方式，而不是继续用旧图标。
-+ 主题默认是初音绿（`0xFF39C5BB`）。已有安装会迁移一次，之后保持设置里调色板所选的颜色。本
-  fork 新增的图标全部来自 Material 图标集，因此没有捆绑任何第三方美术资源。
++ 主题默认是初音绿（`0xFF39C5BB`）。已有安装会迁移一次，之后保持设置里调色板所选的颜色。本仓库
+  新增的图标全部来自 Material 图标集，因此没有捆绑任何第三方美术资源。
 + 设置页以 **主题** 分组开头：调色板、会被复制进管理器私有存储的**背景图片**，以及**小组件
   不透明度**滑块。图片位于所有页面之下，卡片、顶栏与底栏按所选比例半透明绘制（默认 80 %，所以
   背景图能透出来）—— 调到 100 % 则完全不透明，文字保持原有对比度。
@@ -114,20 +115,22 @@
 
 ## 来源与许可
 
-本项目是 **LSPatch 的二次修改版本**（经由 HKP），来源链如下：
+本项目是 **LSPatch 的二次修改版本**（经由 HKP），整体以 **GPL-3.0** 分发。来源链如下 —— 每一层
+的措辞都取自上游自己的 README 与仓库信息（2026-09-30 通过 GitHub API 逐项核对），不是推测：
 
-| 层级 | 项目 | 说明 | 许可证 |
+| 层级 | 项目 | 在本项目中的角色 | 许可证 |
 | --- | --- | --- | --- |
-| 上游 | [LSPosed](https://github.com/LSPosed/LSPosed) / [JingMatrix/LSPosed](https://github.com/JingMatrix/LSPosed) | 框架核心（hook、服务、Xposed API 桥） | GPL-3.0 |
-| 上游 | [LSPatch](https://github.com/LSPosed/LSPatch)（原作者 canyie 与 LSPosed 开发者）/ [JingMatrix/LSPatch](https://github.com/JingMatrix/LSPatch) | 免 Root 补丁方案：把框架注入目标 APK 的思路与补丁管线、管理器骨架 | GPL-3.0 |
-| 直接上游 | [HKP / HkPatch](https://github.com/wyx176/HKP) | 本仓库直接 fork 的源码树（`patch/`、`patch-loader/`、`meta-loader/`、`share/`、`manager/`、`core/` 均由它摊平而来，包名 `org.hkp`） | GPL-3.0 |
-| 本仓库 | YTP | 在上面这棵树上的二次修改（包名改为 `org.ytp`、`core` 摊平、管理器与补丁管线大量改动，见“本 fork 的改动”） | GPL-3.0 |
+| 基础框架 | [LSPosed](https://github.com/LSPosed/LSPosed) / [JingMatrix/LSPosed](https://github.com/JingMatrix/LSPosed)（即 **Vector** 一脉） | ART hook 框架与 Xposed API 桥。摊平在 `core/` 下的就是它：`core/README.md` 至今仍写着 “LSPosed Framework”，其徽章指向 `JingMatrix/LSPosed` | GPL-3.0 |
+| 免 Root 补丁的起点 | [Xpatch](https://github.com/WindySha/Xpatch)（WindySha） | 把框架重打包进目标 APK 的最初做法。LSPatch 的 README 在 Credits 里把它列为 “**Fork source**” | Apache-2.0 |
+| 直接前身 | [LSPatch](https://github.com/LSPosed/LSPatch)（LSPosed 组织，仓库**已归档**，末次提交 2023-12-13）/ [JingMatrix/LSPatch](https://github.com/JingMatrix/LSPatch)（活跃分支，HKP 跟随的就是它） | 免 Root 补丁方案：补丁管线与管理器骨架。原版 README 的原话是 “Rootless implementation of LSPosed framework, integrating Xposed API by inserting dex and so into the target APK”，其 Credits 写的是 “LSPosed: Core framework”“Xpatch: Fork source” | GPL-3.0 |
+| 直接上游 | HKP / HkPatch（原作者 wyx176） | 本仓库直接 fork 的源码树：`patch/`、`patch-loader/`、`meta-loader/`、`share/`、`manager/`、`core/` 都由它摊平而来（上游包名 `org.hkp`）。其仓库 <https://github.com/wyx176/HKP> 现已不再公开（2026-09-30 查询返回 404），因此**本仓库就是这批代码的公开源码** | GPL-3.0 |
+| 本仓库 | YTP | 在上面这棵树上的二次修改（包名改为 `org.ytp`、`core` 摊平、管理器与补丁管线大量改动，见「本仓库的改动」） | GPL-3.0 |
 
 **修改声明（GPL-3.0 第 5(a) 条）**：本仓库是一个**被修改过的版本**，不是上游原版。修改自
 2026-09-29 起由 YTP 维护者进行，内容包括但不限于：包名与资源名重命名（`org.hkp` →
 `org.ytp`、HKP → YTP）、把 `core` 子模块摊平为普通源码、管理器界面与交互重写、补丁管线的
 健壮性修复、原生/JNI 层加固、版本号统一为 `gradle/version.properties` 单一来源。修改内容与
-日期见本 README 的“本 fork 的改动”以及仓库的 git 提交历史。
+日期见本 README 的「本仓库的改动」以及仓库的 git 提交历史。
 
 上游代码的版权归其各自作者所有；本仓库保留上游的许可证文本、文件头与声明（`LICENSE`、
 `core/LICENSE`、`core/external/*` 各自的许可证）。完整第三方组件清单见 [`NOTICE`](NOTICE)。
@@ -144,7 +147,7 @@
 - `REQUEST_INSTALL_PACKAGES`、`REQUEST_DELETE_PACKAGES` —— 把补丁包交给系统安装器，以及通过同一
   个 `PackageInstaller` 会话卸载/还原。
 - `INTERNET` —— 加载模块仓库列表与模块详情。
-- `GET_ACCOUNTS`、`GET_TASKS`、`KILL_BACKGROUND_PROCESSES` —— 继承自上游，本 fork 的代码中
+- `GET_ACCOUNTS`、`GET_TASKS`、`KILL_BACKGROUND_PROCESSES` —— 继承自上游，本仓库的代码中
   没有任何地方使用。
 
 没有定位、相机、麦克风、通讯录、电话或广告相关权限，没有分析统计也没有遥测；应用内更新检查
@@ -174,21 +177,22 @@
 
 ## 致谢
 
-- [HKP / HkPatch](https://github.com/wyx176/HKP)：本仓库直接 fork 的 GPL-3.0 上游（YTP 的补丁管线与摊平的 `core/` 均来自它）
-- [LSPatch](https://github.com/LSPosed/LSPatch) / [JingMatrix/LSPatch](https://github.com/JingMatrix/LSPatch)：免 Root 补丁方案与补丁管线的上游，原作者 canyie 与 LSPosed 开发者
-- [LSPosed](https://github.com/LSPosed/LSPosed) / [JingMatrix/LSPosed](https://github.com/JingMatrix/LSPosed)：框架核心
-- [Xpatch](https://github.com/WindySha/Xpatch)：fork 来源
+- HKP / HkPatch（原作者 wyx176）：本仓库直接 fork 的 GPL-3.0 上游（YTP 的补丁管线与摊平的 `core/` 均来自它）；仓库 <https://github.com/wyx176/HKP> 现已不再公开
+- [LSPatch](https://github.com/LSPosed/LSPatch)（已归档）/ [JingMatrix/LSPatch](https://github.com/JingMatrix/LSPatch)（活跃分支）：免 Root 补丁方案与补丁管线的直接前身
+- [LSPosed](https://github.com/LSPosed/LSPosed) / [JingMatrix/LSPosed](https://github.com/JingMatrix/LSPosed)（即 Vector）：`core/` 里的框架核心
+- [Xpatch](https://github.com/WindySha/Xpatch)（Apache-2.0）：LSPatch 的 “Fork source”，免 Root 补丁方案的起点
 - [Apkzlib](https://android.googlesource.com/platform/tools/apkzlib)：重打包工具
 - [MT Manager](https://mt2.cn)：`patch/src/main/java/bin/{mt,zip,io}` 反编译自它 —— 原地 APK v2/v3 签名与“原包复用”所依赖的 ZIP 层（未找到上游许可证，见 [`NOTICE`](NOTICE)）
 - [ManifestEditor](https://github.com/WindySha/ManifestEditor)：`core/external/axml` 下的 [axml](https://github.com/Sable/axml) 编辑器（未找到上游许可证，见 [`NOTICE`](NOTICE)）
 
 ## 第三方声明
 
-本项目源码树与发布的 APK 中都包含他人的成果：源自 LSPosed/Xpatch 的免 Root Xposed 核心
-（GPL-3.0）、`core/external` 下摊平的各个项目（LGPL-3.0、Apache-2.0、MIT）、Maven 依赖
-（Apache-2.0 / BSD-3-Clause），以及 `patch/src/main/java/bin/` 下反编译自 MT Manager 的代码
-（未能找到其上游许可证，保留的原因是补丁管线依赖它的原地 APK 签名与原包数据复用）。每一部分
-是什么、依据什么条款，都列在 [`NOTICE`](NOTICE) 中。
+本项目源码树与发布的 APK 中都包含他人的成果：源自 LSPosed 的免 Root Xposed 核心（GPL-3.0）、
+源自 LSPatch / Xpatch 的补丁方案（GPL-3.0 / Apache-2.0）、`core/external` 下摊平的各个项目
+（LGPL-3.0、Apache-2.0、MIT）、Maven 依赖（Apache-2.0 / BSD-3-Clause），以及
+`patch/src/main/java/bin/` 下反编译自 MT Manager 的代码（未能找到其上游许可证，保留的原因是
+补丁管线依赖它的原地 APK 签名与原包数据复用）。每一部分是什么、依据什么条款，都列在
+[`NOTICE`](NOTICE) 中。
 
 ## 许可证
 

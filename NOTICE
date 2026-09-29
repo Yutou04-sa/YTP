@@ -8,15 +8,22 @@ YTP 是 **LSPatch 的二次修改版本**，经由 HKP（HkPatch）而来，整�
 License v3.0** 分发 —— 见 `LICENSE`（摊平的核心自带一份，在 `core/LICENSE`）。来源链：
 
   1. **LSPosed** <https://github.com/LSPosed/LSPosed>（活跃分支
-     <https://github.com/JingMatrix/LSPosed>）—— 框架核心（hook、服务、Xposed API 桥）。
+     <https://github.com/JingMatrix/LSPosed>，即 Vector 一脉）—— 框架核心（hook、服务、Xposed
+     API 桥）。本仓库 `core/` 摊平的就是它（`core/README.md` 至今仍写着 “LSPosed Framework”）。
      **GPL-3.0**。
-  2. **LSPatch** <https://github.com/LSPosed/LSPatch>（原作者 canyie 与 LSPosed 开发者；活跃分支
-     <https://github.com/JingMatrix/LSPatch>）—— 免 Root 的补丁方案：把框架注入目标 APK 的思路、
-     补丁管线与管理器骨架。**GPL-3.0**（其仓库声明的许可证与本项目一致）。
-  3. **HKP / HkPatch** <https://github.com/wyx176/HKP> —— 本仓库**直接 fork** 的源码树：
-     `patch/`、`patch-loader/`、`meta-loader/`、`share/`、`manager/`、`core/` 都由它摊平而来
-     （上游包名为 `org.hkp`）。**GPL-3.0**（`LICENSE` 来自该仓库）。
-  4. **YTP**（本仓库）—— 在上面这棵树上的修改版本。
+  2. **Xpatch** <https://github.com/WindySha/Xpatch>（WindySha）—— 免 Root 补丁方案的起点：把框架
+     重打包进目标 APK 的最初做法。LSPatch 的 README 在 Credits 里把它列为 “Fork source”。
+     **Apache-2.0**。
+  3. **LSPatch** <https://github.com/LSPosed/LSPatch>（LSPosed 组织；仓库**已归档**，末次提交
+     2023-12-13；活跃分支 <https://github.com/JingMatrix/LSPatch>，HKP 跟随的就是它）—— 免 Root
+     的补丁方案：补丁管线与管理器骨架。其 README 自称 “Rootless implementation of LSPosed
+     framework, integrating Xposed API by inserting dex and so into the target APK”，Credits 为
+     “LSPosed: Core framework”“Xpatch: Fork source”。**GPL-3.0**。
+  4. **HKP / HkPatch** <https://github.com/wyx176/HKP>（原作者 wyx176）—— 本仓库**直接 fork** 的
+     源码树：`patch/`、`patch-loader/`、`meta-loader/`、`share/`、`manager/`、`core/` 都由它摊平
+     而来（上游包名为 `org.hkp`）。**GPL-3.0**（`LICENSE` 来自该仓库）。该仓库现已不再公开
+     （2026-09-30 查询返回 404），因此本仓库是这批代码的公开源码。
+  5. **YTP**（本仓库）—— 在上面这棵树上的修改版本。
 
 **修改声明（GPL-3.0 第 5(a) 条）**：本仓库是一个被**修改过**的版本，不是上述任何上游的原版。
 修改自 **2026-09-29** 起由 YTP 维护者进行，包括但不限于：
@@ -31,7 +38,7 @@ License v3.0** 分发 —— 见 `LICENSE`（摊平的核心自带一份，在 `
   * 构建与发布：版本号统一到 `gradle/version.properties`、CI（`.github/workflows/android.yml`）
     重写、默认构建全部支持的 ABI。
 
-修改内容与日期同时记录在本 README 的“本 fork 的改动”与仓库的 git 提交历史中。上游代码的版权归
+修改内容与日期同时记录在本 README 的“本仓库的改动”与仓库的 git 提交历史中。上游代码的版权归
 其各自作者所有；本仓库保留上游的许可证文本、文件头与声明。
 
 如果你认为某个组件被错误地列出，或在本仓库中被以你未授权的权利再分发，请到
@@ -41,9 +48,9 @@ License v3.0** 分发 —— 见 `LICENSE`（摊平的核心自带一份，在 `
 二、随源码树提供的第三方源码（`core/`）
 ---------------------------------------
 
-  * `core/` —— 免 Root Xposed 框架核心（LSPosed API、桥、服务），源自 LSPosed
-    <https://github.com/JingMatrix/LSPosed> 与 Xpatch 分支
-    <https://github.com/WindySha/Xpatch>。**GPL-3.0**（`core/LICENSE`）。
+  * `core/` —— 免 Root Xposed 框架核心（LSPosed API、桥、服务），源自
+    <https://github.com/JingMatrix/LSPosed>（`core/README.md` 即该项目的 README，徽章与 Crowdin
+    链接都指向它）。**GPL-3.0**（`core/LICENSE`）。
   * `core/external/lsplant` —— LSPlant，ART hook 库（LSPosed）。**LGPL-3.0**
     （`core/external/lsplant/LICENSE`）。
   * `core/external/lsplt` —— LSPlt，native PLT hook 库。**LGPL-3.0**。
@@ -79,7 +86,7 @@ License v3.0** 分发 —— 见 `LICENSE`（摊平的核心自带一份，在 `
   是 11 990 608 B）。若你拥有该代码的权利并反对在此再分发，请提 issue，我们会移除。
 
   说明：这些文件在上游 HKP 中已经存在（本仓库与 HKP 的 `bin/` 逐字节一致，仅 `bin/zip/
-  DataMultiplexing.java` 有 2 行差异），并非本 fork 引入。
+  DataMultiplexing.java` 有 2 行差异），并非本仓库引入。
 
 
 四、来自 Maven 的依赖（会被打进 APK）
@@ -98,4 +105,4 @@ License v3.0** 分发 —— 见 `LICENSE`（摊平的核心自带一份，在 `
     Material 图标集（Apache-2.0）。没有捆绑其他第三方美术资源。
   * `manager/src/main/assets/keystore` **不是**第三方素材，而是维护者自己的发布密钥库，随 APK
     一起分发，目的是让补丁应用与管理器使用同一张证书签名。既然它被公开在仓库里，就请把它当作
-    公开密钥：发布你自己的构建前，请导入你自己的密钥库 —— 见 `README.md` 的“本 fork 的改动”。
+    公开密钥：发布你自己的构建前，请导入你自己的密钥库 —— 见 `README.md` 的“本仓库的改动”。

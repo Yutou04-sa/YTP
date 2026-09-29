@@ -1,4 +1,4 @@
-name: Android CI
+name: 安卓 CI
 
 # 每次 push / PR 都构建管理器 APK。
 # 推送版本标签（例如 `git tag v2.2.0 && git push ytp v2.2.0`）会以该标签发布一个 GitHub Release。
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   build:
-    name: Build
+    name: 构建
     runs-on: ubuntu-latest
     env:
       # 可选的签名材料。仓库配置了这些 secret 时，APK 会用与本地构建相同的密钥签名；
@@ -30,25 +30,25 @@ jobs:
       # 签名的 APK。
       SIGNING_CERT_SHA256: ${{ secrets.SIGNING_CERT_SHA256 }}
     steps:
-      - name: Checkout
+      - name: 检出代码
         uses: actions/checkout@v5
         with:
           # lsplant 会从 git 历史（最近的 tag）推导自身版本号，所以浅克隆不够。
           fetch-depth: 0
 
-      - name: Setup Java
+      - name: 配置 Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
-      - name: Setup Gradle
+      - name: 配置 Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Setup Android SDK
+      - name: 配置 Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install SDK packages
+      - name: 安装 SDK 组件
         run: |
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager --install \
@@ -59,7 +59,7 @@ jobs:
           # 用运行器预装的 cmake 也可以接受。
           sdkmanager --install "cmake;3.31.6" || echo "::warning::cmake;3.31.6 was not installed by sdkmanager"
 
-      - name: Upgrade Ninja (C++20 modules need Ninja >= 1.11)
+      - name: 升级 Ninja（C++20 modules 需要 Ninja >= 1.11）
         # Android SDK 的 cmake 包自带旧版 ninja（运行器上是 1.10.2），而 AGP 会把它作为
         # CMAKE_MAKE_PROGRAM 显式传给 CMake，所以只把新版 ninja 放到 PATH 里没用：
         # lsplant / dex_builder 使用 C++20 modules，CMake 在 Ninja < 1.11 时拒绝生成。
@@ -78,7 +78,7 @@ jobs:
           ninja --version
           "$ANDROID_HOME"/cmake/*/bin/ninja --version
 
-      - name: Write signing material
+      - name: 写入签名材料
         # 缺少 secret 时整步跳过，release 保持未签名。
         # KEY_ALIAS 是唯一按字面写入的项（这里的 Java .properties 转义会按 UTF-8 读，
         # 所以直接写非 ASCII 别名有风险）。
@@ -95,13 +95,15 @@ jobs:
           EOF
           ls -l manager/signing
 
-      - name: Build release APK
+      - name: 构建 release APK
         run: ./gradlew :manager:buildRelease --console=plain --stacktrace
 
-      - name: Verify the apk signature
+      - name: 校验 APK 签名
         # 绝不发布签名者不符合预期的 APK：release 的可信度等同于给它签名的证书。
-        # 把 SIGNING_CERT_SHA256 secret 设为期望的 "Signer #1 certificate SHA-256 digest"
-        # 即可让这一步变成强制校验。没有配置签名 secret 时 release 本就未签名，此步只报告该事实。
+        # 把 SIGNING_CERT_SHA256 secret 设为期望的证书 SHA-256（apksigner 输出的
+        # "certificate SHA-256 digest" 一行，build-tools 37 会写成
+        # "V3.0 Signer: certificate SHA-256 digest: …"）即可让这一步变成强制校验。
+        # 没有配置签名 secret 时 release 本就未签名，此步只报告该事实。
         run: |
           set -euo pipefail
           apksigner="$ANDROID_HOME/build-tools/37.0.0/apksigner"
@@ -118,8 +120,8 @@ jobs:
               continue
             fi
             grep -i "certificate SHA-256 digest" "$report" || true
-            # build-tools 37 prefixes the digest lines with the scheme ("V3.0 Signer:"),
-            # older ones use "Signer #1", so match on the digest name alone.
+            # build-tools 37 会在摘要行前加上签名方案（"V3.0 Signer:"），旧版本写的是
+            # "Signer #1"，所以这里只按摘要名称匹配，不依赖前缀。
             actual=$(grep -i "certificate SHA-256 digest" "$report" | head -n 1 | awk '{print $NF}' | tr -d ':\r' | tr 'A-F' 'a-f')
             if [ -n "${SIGNING_KEYSTORE_BASE64:-}" ]; then
               if [ -z "$actual" ]; then
@@ -140,12 +142,12 @@ jobs:
             fi
           done
 
-      - name: Generate checksums
+      - name: 生成校验和
         run: |
           set -euo pipefail
           (cd out/release && sha256sum *.apk | tee SHA256SUMS.txt)
 
-      - name: Upload APK
+      - name: 上传 APK
         uses: actions/upload-artifact@v7
         with:
           name: YTP-apk-${{ github.sha }}
@@ -157,7 +159,7 @@ jobs:
 
       # 仅标签构建：附上本次运行产出的 APK。重跑工作流会替换该 Release，
       # 而不是再追加一套资产。
-      - name: Publish release
+      - name: 发布 Release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
@@ -179,5 +181,5 @@ jobs:
             --title "YTP ${ver}" \
             --notes "本构建由 [run ${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) 自动生成。
 
-          源码地址：${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} —— YTP 是 LSPatch 的二次修改版本（经由 HKP / HkPatch），以 GPL-3.0 授权，第三方组件声明见仓库中的 NOTICE。" \
+          源码地址：${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} —— YTP 是 LSPatch 的二次修改版本（经由 HKP / HkPatch）：框架核心来自 LSPosed，免 Root 打补丁的思路来自 LSPatch / Xpatch，整体以 GPL-3.0 授权；第三方组件声明见仓库中的 NOTICE。" \
             out/release/*.apk out/release/SHA256SUMS.txt
