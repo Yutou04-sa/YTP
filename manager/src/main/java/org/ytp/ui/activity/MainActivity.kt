@@ -2,6 +2,7 @@ package org.ytp.ui.activity
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -40,9 +41,11 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -55,6 +58,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -63,7 +67,9 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import com.ramcosta.composedestinations.DestinationsNavHost
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.ytp.R
 import org.ytp.config.Configs
 import org.ytp.lspApp
@@ -375,14 +381,55 @@ private fun PageBackgroundImage() {
         return
     }
 
-    val bitmap = remember(path) {
-        runCatching { BitmapFactory.decodeFile(path) }.getOrNull()
-    } ?: return
+    // 背景是 Crop 铺满整屏，解码到屏幕长边附近就够；原实现主线程解整张图（12MP ≈ 48MB）并常驻。
+    val context = LocalContext.current
+    val targetSide = remember(context) {
+        val metrics = context.resources.displayMetrics
+        maxOf(metrics.widthPixels, metrics.heightPixels).coerceAtLeast(1)
+    }
+
+    // 解码放在 IO 线程：path 变化会重新解码；新图到货前先沿用上一张，视觉上不闪。
+    val bitmap by produceState<Bitmap?>(initialValue = null, path, targetSide) {
+        value = withContext(Dispatchers.IO) { decodeSampledBackground(path, targetSide) }
+    }
+
+    // 只回收本组件自己解码出来的位图：path 变化或组件销毁时释放上一张。
+    DisposableEffect(bitmap) {
+        val decoded = bitmap
+        onDispose { decoded?.recycle() }
+    }
+
+    val ready = bitmap ?: return
 
     Image(
-        bitmap = bitmap.asImageBitmap(),
+        bitmap = ready.asImageBitmap(),
         contentDescription = null,
         modifier = Modifier.fillMaxSize(),
         contentScale = ContentScale.Crop
     )
 }
+
+/**
+ * 按 [targetSide]（屏幕长边，像素）采样解码背景图。
+ *
+ * `inJustDecodeBounds` 只读图片头拿尺寸，`inSampleSize` 是 2 的幂，让解码后的长边落在
+ * `[targetSide / 2, targetSide)`：既明显小于原图，又不会糊到看得见。
+ * 读不出尺寸或解码失败（文件被删、格式不认识）返回 null，界面就当作没有背景图。
+ */
+private fun decodeSampledBackground(path: String, targetSide: Int): Bitmap? = runCatching {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
+    if (maxDim <= 0) return@runCatching null
+
+    val minSide = (targetSide / 2).coerceAtLeast(1)
+    var sampleSize = 1
+    while (sampleSize < 1024 && maxDim / (sampleSize * 2) >= minSide) {
+        sampleSize *= 2
+    }
+
+    BitmapFactory.decodeFile(
+        path,
+        BitmapFactory.Options().apply { inSampleSize = sampleSize }
+    )
+}.getOrNull()

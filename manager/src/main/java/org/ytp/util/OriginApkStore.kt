@@ -9,6 +9,7 @@ import org.ytp.share.Constants
 import java.io.File
 import java.io.IOException
 import java.util.Properties
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipFile
 
 /**
@@ -38,6 +39,35 @@ object OriginApkStore {
 
     private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
 
+    /**
+     * 备份时中转用的目录、以及「旧备份先挪走」用的目录，都必须每次运行唯一：
+     * 固定名字（`<pkg>.tmp` / `<pkg>.old`）在两个备份/回滚重叠时会互相踩掉。
+     * 名字仍然以 [TMP_SUFFIX]/[OLD_SUFFIX] 结尾，[listBackups] 会照旧跳过它们。
+     */
+    private val workDirSeq = AtomicInteger()
+
+    private fun workDir(root: File, packageName: String, suffix: String): File =
+        File(root, "$packageName-${System.currentTimeMillis()}-${workDirSeq.incrementAndGet()}$suffix")
+
+    /** 匹配本包自己遗留的中转目录，不会误伤真正的备份目录（目录名就是包名本身）。 */
+    private fun isStaleWorkDir(name: String, packageName: String): Boolean = Regex(
+        "^" + Regex.escape(packageName) + "-\\d+-\\d+(" +
+            Regex.escape(TMP_SUFFIX) + "|" + Regex.escape(OLD_SUFFIX) + ")$"
+    ).matches(name)
+
+    /**
+     * 清掉上次备份/回滚中断后留下的中转目录（改用唯一名字后不再自动被覆盖）。
+     * [keep] 是本次要用的两个名字，绝不动它们。
+     */
+    private fun cleanStaleWorkDirs(root: File, packageName: String, keep: Set<String>) {
+        root.listFiles()?.forEach { file ->
+            if (file.name in keep || !isStaleWorkDir(file.name, packageName)) return@forEach
+            if (!file.deleteRecursively()) {
+                Log.w(TAG, "Unable to delete the stale work directory ${file.path}")
+            }
+        }
+    }
+
     class Backup(
         val packageName: String,
         val label: String,
@@ -66,20 +96,28 @@ object OriginApkStore {
         "assets/lspatch/config.json",
     )
 
-    /** True when the given APK was patched by this manager — only YTP patches are accepted. */
+    /**
+     * True when the given APK was patched by this manager — only YTP patches are accepted.
+     *
+     * 读不出 zip 时按「可能已经打过补丁」处理并返回 true：false 会让 [backup] 把补丁包
+     * 当成原包存下来，覆盖掉真正的原包备份，之后再打补丁就没有还原点了。
+     */
     fun isPatchedApk(file: File): Boolean = try {
         ZipFile(file).use { zip -> zip.getEntry(Constants.CONFIG_ASSET_PATH) != null }
     } catch (t: Throwable) {
-        Log.w(TAG, "Failed to inspect ${file.path}", t)
-        false
+        Log.e(TAG, "Failed to inspect ${file.path}; assuming it is already patched", t)
+        true
     }
 
-    /** True when the given APK carries a patch of this manager or of a framework it forked from. */
+    /**
+     * True when the given APK carries a patch of this manager or of a framework it forked from.
+     * 同 [isPatchedApk]：读不出来时保守地当作「可能已打补丁」，宁可跳过备份也不能覆盖原包。
+     */
     private fun carriesAnyPatch(file: File): Boolean = try {
         ZipFile(file).use { zip -> ANY_PATCH_ASSET_PATHS.any { zip.getEntry(it) != null } }
     } catch (t: Throwable) {
-        Log.w(TAG, "Failed to inspect ${file.path}", t)
-        false
+        Log.e(TAG, "Failed to inspect ${file.path}; assuming it is already patched", t)
+        true
     }
 
     /**
@@ -119,9 +157,10 @@ object OriginApkStore {
             return null
         }
         val target = File(root, packageName)
-        val tmp = File(root, packageName + TMP_SUFFIX)
+        val tmp = workDir(root, packageName, TMP_SUFFIX)
+        val old = workDir(root, packageName, OLD_SUFFIX)
         return try {
-            tmp.deleteRecursively()
+            cleanStaleWorkDirs(root, packageName, setOf(tmp.name, old.name))
             if (!tmp.mkdirs()) throw IOException("Unable to create ${tmp.path}")
             sources.forEachIndexed { index, src ->
                 val name = if (index == 0) "base.apk" else src.name
@@ -140,23 +179,32 @@ object OriginApkStore {
             File(tmp, META_FILE).outputStream().use { meta.store(it, null) }
             // Move the previous backup aside instead of deleting it: a failure between the two
             // renames can then be rolled back and never leaves the user without a copy.
-            val old = File(root, packageName + OLD_SUFFIX)
-            old.deleteRecursively()
             if (target.exists() && !target.renameTo(old)) {
                 throw IOException("Unable to move ${target.path} aside")
             }
             if (!tmp.renameTo(target)) {
-                if (!old.renameTo(target)) {
-                    Log.e(TAG, "Unable to restore the previous backup of $packageName from ${old.path}")
+                // 回滚失败会让用户同时失去旧备份和新备份，必须显式抛错而不是只打日志。
+                if (old.exists() && !old.renameTo(target)) {
+                    throw IOException(
+                        "Unable to move ${tmp.path} to ${target.path} and unable to restore " +
+                            "the previous backup from ${old.path}"
+                    )
                 }
                 throw IOException("Unable to move ${tmp.path} to ${target.path}")
             }
-            old.deleteRecursively()
+            if (old.exists() && !old.deleteRecursively()) {
+                // 新备份已经就位，删除失败只留下一个可被下次清理的中转目录。
+                Log.w(TAG, "Unable to delete the previous backup of $packageName at ${old.path}")
+            }
             Log.i(TAG, "Origin backup stored for $packageName ($versionCode)")
             readBackup(packageName)
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to back up $packageName", t)
             tmp.deleteRecursively()
+            // 旧备份已经挪走而新备份没就位时，尽力把它放回原位，避免用户两手空空。
+            if (!target.exists() && old.exists() && !old.renameTo(target)) {
+                Log.e(TAG, "Unable to restore the previous backup of $packageName from ${old.path}")
+            }
             // A real failure must not look like "nothing to back up": the caller reports it to the user.
             throw if (t is IOException) t else IOException("Failed to back up $packageName", t)
         }

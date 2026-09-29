@@ -32,6 +32,7 @@ import java.io.InputStreamReader
 import java.text.Collator
 import java.util.Locale
 import java.util.Properties
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipFile
 
 object LSPPackageManager {
@@ -40,6 +41,9 @@ object LSPPackageManager {
     private const val SETTINGS_CATEGORY = "de.robv.android.xposed.category.MODULE_SETTINGS"
 
     const val STATUS_USER_CANCELLED = -2
+
+    /** 用于给无法从 `DISPLAY_NAME` 得到可用名字的 apk 生成互不重复的兜底文件名。 */
+    private val fallbackNameSeq = AtomicInteger()
 
     @Parcelize
     class AppInfo(val app: ApplicationInfo, val label: String,val isXposedModule: String) : Parcelable {
@@ -164,6 +168,24 @@ object LSPPackageManager {
         return lspApp.packageManager.getPackageInfo(packageName, 0)?.longVersionCode ?: 0L
     }
 
+    /**
+     * 这个包现在是否确实还装着。
+     *
+     * 只有 `getPackageInfo` 真的成功时才返回 true（真正的肯定结论）；包不存在或查询
+     * 本身失败都返回 false。与 [getVersionName]/[getVersionCode] 的区别在于：调用方
+     * 拿到的 false 是「查不到」，不能再像以前那样直接当成「已卸载」去删用户配置，
+     * 见 [ConfigManager.updateModules]。
+     */
+    fun isPackageInstalled(packageName: String): Boolean {
+        return try {
+            lspApp.packageManager.getPackageInfo(packageName, 0)
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to look up package: $packageName", e)
+            false
+        }
+    }
+
     fun getDescription(appInfo: AppInfo): String? {
         val description = appInfo.app.metaData?.get("xposeddescription")
         if(description != null){
@@ -192,9 +214,7 @@ object LSPPackageManager {
                 val appInfos = apks.mapNotNull { uri ->
                     val src = DocumentFile.fromSingleUri(lspApp, uri)
                         ?: throw IOException("DocumentFile is null")
-                    val name = src.name?.takeIf { it.isNotBlank() }
-                        ?: throw IOException("Unable to resolve a file name for $uri")
-                    val dst = lspApp.tmpApkDir.resolve(name)
+                    val dst = safeTmpApkFile(src.name)
                     copyUriToFile(uri, dst)
 
                     val appInfo = lspApp.packageManager.getPackageArchiveInfo(
@@ -315,6 +335,38 @@ object LSPPackageManager {
                 ris[0].activityInfo.packageName,
                 ris[0].activityInfo.name
             )
+    }
+
+    /**
+     * `tmpApkDir` 下的安全落点。
+     *
+     * 文件名来自外部 ContentProvider 的 `DISPLAY_NAME`，完全可控：含 `../` 就能写到
+     * 私有目录之外（入口 MainActivity 是 exported 的）。这里只取最后一段并剔除
+     * 分隔符 / 控制字符 / `..`，再确认规范路径的父目录确实是 `tmpApkDir` 才返回。
+     *
+     * 文件名不参与包名解析（包名由 [PackageManager.getPackageArchiveInfo] 从文件内容读出），
+     * 所以名字不可用时退回「时间戳 + 序号 + .apk」不会影响后续流程；序号是为了同一毫秒内
+     * 处理多个 split 时名字仍然唯一（否则会互相覆盖）。
+     */
+    private fun safeTmpApkFile(rawName: String?): File {
+        val sanitized = rawName.orEmpty()
+            .substringAfterLast('/')
+            .substringAfterLast('\\')
+            .filter { it.code >= 0x20 && it.code != 0x7f && it != '/' && it != '\\' }
+            .replace("..", "_")
+            .trim()
+        val name = if (sanitized.isEmpty() || !sanitized.endsWith(".apk", ignoreCase = true)) {
+            System.currentTimeMillis().toString() + "-" + fallbackNameSeq.incrementAndGet() + ".apk"
+        } else {
+            sanitized
+        }
+        val candidate = lspApp.tmpApkDir.resolve(name)
+        val canonicalDir = lspApp.tmpApkDir.canonicalFile
+        if (candidate.canonicalFile.parentFile != canonicalDir) {
+            Log.e(TAG, "Refusing to write outside $canonicalDir: $rawName")
+            throw IOException("Unsafe apk file name: $rawName")
+        }
+        return candidate
     }
 
     /**

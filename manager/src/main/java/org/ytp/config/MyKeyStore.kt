@@ -17,6 +17,10 @@ import java.io.Serializable
 import java.security.KeyStore
 
 // 密钥存储项数据类
+//
+// 安全提醒：password / aliasPassword 是明文，这个对象整体被 Java 序列化写到
+// filesDir/keystores.dat。文件在应用私有目录里，但仍然等同于明文保存密钥口令，
+// 不要把它导出、分享或纳入外部备份。格式保持原样（不做迁移，避免读不了旧安装的数据）。
 data class KeyStoreItem(
     val name: String,
     val path: String, // 本地文件路径
@@ -83,12 +87,12 @@ object MyKeyStore {
         }
         
         try {
-            val fileInputStream = FileInputStream(keyStoreListFile)
-            val objectInputStream = ObjectInputStream(fileInputStream)
-            @Suppress("UNCHECKED_CAST")
-            val keyStores = objectInputStream.readObject() as? List<KeyStoreItem>
-            objectInputStream.close()
-            fileInputStream.close()
+            val keyStores = FileInputStream(keyStoreListFile).use { fileInputStream ->
+                ObjectInputStream(fileInputStream).use { objectInputStream ->
+                    @Suppress("UNCHECKED_CAST")
+                    objectInputStream.readObject() as? List<KeyStoreItem>
+                }
+            }
             return keyStores ?: emptyList()
         } catch (e: Exception) {
             e.printStackTrace()
@@ -100,11 +104,11 @@ object MyKeyStore {
     private suspend fun saveKeyStoresToStorage(keyStores: List<KeyStoreItem>) {
         withContext(Dispatchers.IO) {
             try {
-                val fileOutputStream = FileOutputStream(keyStoreListFile)
-                val objectOutputStream = ObjectOutputStream(fileOutputStream)
-                objectOutputStream.writeObject(keyStores)
-                objectOutputStream.close()
-                fileOutputStream.close()
+                FileOutputStream(keyStoreListFile).use { fileOutputStream ->
+                    ObjectOutputStream(fileOutputStream).use { objectOutputStream ->
+                        objectOutputStream.writeObject(keyStores)
+                    }
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -116,13 +120,15 @@ object MyKeyStore {
         withContext(Dispatchers.IO) {
             // 首先验证密钥库是否有效
             val keyStore = KeyStore.getInstance(KeyStore.getDefaultType())
-            try {
-                tmpFile.inputStream().use { input ->
-                    keyStore.load(input, password.toCharArray())
-                }
-                keyStore.getKey(alias, aliasPassword.toCharArray())
-            } catch (e: Exception) {
-                throw e
+            tmpFile.inputStream().use { input ->
+                keyStore.load(input, password.toCharArray())
+            }
+            // 别名不存在（getKey 返回 null）或别名密码错误（getKey 抛异常）必须在这里
+            // 就失败：否则直到打补丁时才由 YTPExtend 报错，而那时密钥文件早已写进 filesDir。
+            // 失败会作为异常抛给调用方（设置页 catch 后直接把 message 显示出来）。
+            val key = keyStore.getKey(alias, aliasPassword.toCharArray())
+            if (key == null) {
+                throw IllegalArgumentException("密钥库中不存在别名 $alias，请检查别名与密码")
             }
             
             // 创建唯一命名的密钥文件

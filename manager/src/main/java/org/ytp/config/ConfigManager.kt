@@ -6,6 +6,7 @@ import androidx.room.Room
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.withContext
+import org.ytp.util.LSPPackageManager
 import org.ytp.util.ModuleLoader
 import java.io.File
 
@@ -30,8 +31,19 @@ object ConfigManager {
             for (module in moduleDao.getAll()) {
                 val apkPath = newModules[module.pkgName]
                 if (apkPath == null) {
-                    moduleDao.delete(module)
-                    loadedModules.remove(module)
+                    // 这次扫描没看到它：可能是真卸载了，也可能只是扫描时读 apk 失败
+                    // （例如应用正在升级）。Module 删除会级联删掉 Scope，等于永久丢掉
+                    // 用户的作用域配置，所以只有确认包真的不在了才删；包还在就保留并告警。
+                    if (LSPPackageManager.isPackageInstalled(module.pkgName)) {
+                        Log.w(
+                            TAG,
+                            "Module ${module.pkgName} is still installed but was not detected " +
+                                "in this scan; keeping its configuration"
+                        )
+                    } else {
+                        moduleDao.delete(module)
+                        loadedModules.remove(module)
+                    }
                 } else if (module.apkPath != apkPath) {
                     loadedModules.remove(module)
                     // apkPath 变化时必须落库（原先只改内存副本，重启后又变回旧路径）
