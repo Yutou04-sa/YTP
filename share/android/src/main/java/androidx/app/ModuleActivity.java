@@ -510,6 +510,11 @@ public class ModuleActivity extends Activity {
                     return "打开失败";
                 }
                 return "Open failed";
+            case "save_failed":
+                if ("zh".equals(language)) {
+                    return "保存配置失败，请重试";
+                }
+                return "Failed to save configuration, please try again";
             default:
                 return key;
         }
@@ -679,8 +684,10 @@ public class ModuleActivity extends Activity {
                     .setPositiveButton(getString("confirm_clear_restart"), (dg, which) -> {
                         selectedAppList.clear();
                         appSelectionMap.clear();
-                        saveConfig();
-                        System.exit(0);
+                        // 先保存配置，保存成功后再退出；保存失败则不退出，留在界面上提示用户
+                        if (saveConfig()) {
+                            System.exit(0);
+                        }
                     })
                     .setNegativeButton(getString("cancel"), null)
                     .create();
@@ -692,12 +699,14 @@ public class ModuleActivity extends Activity {
         });
 
         confirmButton.setOnClickListener(v -> {
-            saveConfig();
-            System.exit(0);
+            // 先保存配置，保存成功后再退出；保存失败则不退出，留在界面上提示用户
+            if (saveConfig()) {
+                System.exit(0);
+            }
         });
     }
 
-    private void saveConfig(){
+    private boolean saveConfig(){
         StringBuilder sb = new StringBuilder();
         for (AppInfo appInfo : selectedAppList) {
             sb.append(appInfo.getPackageName()).append(",");
@@ -709,8 +718,12 @@ public class ModuleActivity extends Activity {
             }
             // 保存选中的应用信息为字符串
             Files.write(modulePath, sb.toString().getBytes());
+            return true;
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            // 保存失败不再抛 RuntimeException 崩溃：记录日志并提示用户，保持在界面上
+            Log.e("ModuleManager", "Failed to save module config: " + e);
+            Toast.makeText(this, getString("save_failed"), Toast.LENGTH_LONG).show();
+            return false;
         }
     }
 

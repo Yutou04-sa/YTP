@@ -1279,7 +1279,8 @@ private fun DoPatchBody(modifier: Modifier, navigator: DestinationsNavigator) {
                         if (status == PackageInstaller.STATUS_SUCCESS) {
                             snackbarHost.showSnackbar(installSuccessfully)
                             navigator.navigateUp()
-                        } else if (status !=org.ytp.util.LSPPackageManager.STATUS_USER_CANCELLED) {
+                        } else if (status !=org.ytp.util.LSPPackageManager.STATUS_USER_CANCELLED
+                            && status != PackageInstaller.STATUS_PENDING_USER_ACTION) {
                             val result = snackbarHost.showSnackbar(installFailed, copyError)
                             if (result == SnackbarResult.ActionPerformed) {
                                 val cm =org.ytp.lspApp.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -1356,21 +1357,20 @@ private fun DoPatchBody(modifier: Modifier, navigator: DestinationsNavigator) {
 @Composable
 private fun InstallDialog2(patchApp: org.ytp.util.LSPPackageManager.AppInfo, onFinish: (Int, String?) -> Unit) {
 
-    fun doInstall() {
+    suspend fun doInstall() {
         Log.i(TAG, "Installing app with system installer: ${patchApp.app.packageName}")
-        val apkFiles =org.ytp.lspApp.targetApkFiles
-        if (apkFiles.isNullOrEmpty()){
+        val apkFiles = org.ytp.lspApp.targetApkFiles
+        if (apkFiles.isNullOrEmpty()) {
             onFinish(PackageInstaller.STATUS_FAILURE, "No target APK files found for installation")
             return
         }
         // install every apk of the patched app, otherwise apps with split apks stay incomplete
-        installApks(_root_ide_package_.org.ytp.lspApp, apkFiles)
+        val result = installApks(_root_ide_package_.org.ytp.lspApp, apkFiles)
+        onFinish(result.status, result.message)
     }
 
     LaunchedEffect(patchApp.app.packageName) {
         Log.d(TAG, "State changed to install, starting installation via system.")
         doInstall()
-        // Since system installer is an Intent, it's fire-and-forget. We can dismiss our UI.
-        onFinish(_root_ide_package_.org.ytp.util.LSPPackageManager.STATUS_USER_CANCELLED, "Handed over to system installer")
     }
 }

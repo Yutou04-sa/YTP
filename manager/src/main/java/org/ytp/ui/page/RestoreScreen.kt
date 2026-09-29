@@ -2,6 +2,7 @@ package org.ytp.ui.page
 
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -187,8 +188,12 @@ fun RestoreScreen(navigator: DestinationsNavigator) {
                         item = item,
                         onUninstall = { uninstallApk(context, item.backup.packageName) },
                         onInstall = { files ->
-                            val handedOver = installApks(context, files)
+                            // installApks 现在是 suspend 且返回真实安装状态：交给安装器（含等待用户确认）
+                            // 与安装成功都算"已交给系统安装器"，其它状态才报安装失败。
                             scope.launch {
+                                val result = installApks(context, files)
+                                val handedOver = result.status == PackageInstaller.STATUS_SUCCESS ||
+                                    result.status == PackageInstaller.STATUS_PENDING_USER_ACTION
                                 snackbarHost.showSnackbar(
                                     context.getString(
                                         if (handedOver) {

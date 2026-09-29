@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <external-path name="external_files" path="." />
-    <files-path name="files" path="." />
+    <!--
+      只暴露安装流程真正会交付给系统安装器的目录（Utils.installApk -> FileProvider.getUriForFile）：
+      - origin              原始 APK 备份 filesDir/origin/<packageName>/*.apk（还原安装）
+      - external-cache-path 补丁产物 externalCacheDir/*.apk（Patcher 的输出目录）
+      - cache-path          外部存储不可用时补丁产物回退到 cacheDir/*.apk
+      不要再用 external-path / files-path 的 path="."：那会把整块外部存储、以及整个
+      filesDir（含 keystore.bks）暴露给拿到 URI 的一方。
+    -->
+    <files-path name="origin_backup" path="origin" />
+    <external-cache-path name="patched_external_cache" path="." />
+    <cache-path name="patched_cache" path="." />
 </paths>
