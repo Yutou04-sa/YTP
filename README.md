@@ -53,6 +53,11 @@ For stable releases, please go to [Github Releases page](https://github.com/Yuto
   is built with CMake), plus `local.properties` → `sdk.dir`. The Gradle wrapper pins Gradle 9.4.1, so
   the first build downloads the toolchain it needs.
 
+  Every ABI the framework supports (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`) is built by default,
+  because the patcher copies those libraries into the target app. Pass `-PytpAbis=arm64-v8a` (or a
+  comma-separated list) to build only what your test device needs — the native build time scales with
+  the number of ABIs.
+
   GitHub Actions (`.github/workflows/android.yml`) builds the same release APK on every push and, for
   a `v*` tag, attaches it to a release whose version is the tag (`git tag v1.0 && git push origin v1.0`);
   the tag must match `verName` in `gradle/version.properties`. The workflow signs that APK when the

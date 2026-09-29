@@ -88,9 +88,17 @@ fun Project.configureBaseExtension() {
                     arguments += "-DEXTERNAL_ROOT=${File(rootDir.absolutePath, "core/external")}"
                     arguments += "-DCORE_ROOT=${File(rootDir.absolutePath,
                         "core/core/src/main/jni")}"
-                    // NOTE(local build fix): only arm64-v8a is needed for the test device; building
-                    // all four ABIs multiplies native build time by ~4.
-                    abiFilters("arm64-v8a")
+                    // Every ABI the framework ships for is built by default, because the patcher
+                    // copies these libraries into the target app. Pass -PytpAbis=arm64-v8a (comma
+                    // separated for several) to build only what a test device needs: the native
+                    // build time scales with the number of ABIs.
+                    val abis = (this@configureBaseExtension.findProperty("ytpAbis") as String?)
+                        ?.split(',')
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotEmpty() }
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+                    abiFilters(*abis.toTypedArray())
                     val flags = arrayOf(
                         "-Wall",
                         "-Qunused-arguments",
