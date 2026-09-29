@@ -43,7 +43,6 @@ include(
     ":patch-loader",
     ":share:android",
     ":share:java",
-    ":update-msg",
 )
 include(*coreModules.map { ":$it" }.toTypedArray())
 

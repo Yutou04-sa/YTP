@@ -16,9 +16,6 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import bin.mt.apksign.V2V3SchemeSigner;
-import bin.mt.apksign.key.JksSignatureKey;
-
 public class DataMultiplexing {
 
     private final Logger logger;
@@ -27,14 +24,6 @@ public class DataMultiplexing {
     public DataMultiplexing(Logger  logger, ScheduledExecutorService monitorExecutor){
         this.logger = logger;
         this.monitorExecutor = monitorExecutor;
-    }
-
-    public static void main(String[] args) throws Exception {
-        File input = new File("test.apk");
-        File output = new File("output.apk");
-        //optimize(input, output, "assets/base.apk", true,null);
-        V2V3SchemeSigner.sign(output, new JksSignatureKey("test.jks", "123456", "123456", "123456"), true, true);
-        System.out.println("Check " + isZipFileContentEquals(input, output));
     }
 
     /**
@@ -76,42 +65,6 @@ public class DataMultiplexing {
             }
         }
        // System.out.printf("Data multiplexing optimize: %s (%s) -> %s (%s)  [%.2f%%]\n", input.getName(), formatFileSize(inputLen), output.getName(), formatFileSize(outputLen), (outputLen - inputLen) * 100f / inputLen);
-    }
-
-    /**
-     * 判断两个ZIP文件内容是否完全相同
-     */
-    public static boolean isZipFileContentEquals(File file1, File file2) throws IOException {
-        try (ZipFile zipFile1 = new ZipFile(file1); ZipFile zipFile2 = new ZipFile(file2)) {
-            if (zipFile1.getEntrySize() != zipFile2.getEntrySize()) {
-                return false;
-            }
-            for (ZipEntry entry1 : zipFile1.getEntries()) {
-                ZipEntry entry2 = zipFile2.getEntry(entry1.getName());
-                if (entry2 == null) {
-                    return false;
-                }
-                if (entry1.isDirectory() && entry2.isDirectory()) {
-                    continue;
-                }
-                if (entry1.getMethod() != entry2.getMethod()) {
-                    return false;
-                }
-                if (entry1.getCrc() != entry2.getCrc()) {
-                    return false;
-                }
-                if (entry1.getSize() != entry2.getSize()) {
-                    return false;
-                }
-                if (!Arrays.equals(entry1.getCommentData(), entry2.getCommentData())) {
-                    return false;
-                }
-                if (!isInputStreamContentEquals(zipFile1.getInputStream(entry1), zipFile2.getInputStream(entry2))) {
-                    return false;
-                }
-            }
-            return true;
-        }
     }
 
     private ZipFile collectChildren(ZipFile outer, ZipEntry hostEntry, Set<String> children) throws IOException {

@@ -1,3 +1,12 @@
+/*
+ * This file is part of YTP, a modified version of LSPatch (via HKP / HkPatch).
+ * SPDX-License-Identifier: GPL-3.0-only
+ *
+ * Upstream copyright belongs to the LSPatch / LSPosed / Xpatch authors; the
+ * modifications made in this repository are documented in the NOTICE file and
+ * in the git history. See LICENSE for the full licence text.
+ */
+
 package org.ytp.util
 
 import android.util.Log
@@ -15,9 +24,9 @@ object UpdateChecker {
     private const val TAG = "UpdateChecker"
     
     /**
-     * 更新检查地址。本 fork 不提供自己的 update2 服务，故留空 => 启动时不会发起任何网络请求、
+     * 更新检查地址。本仓库不提供自己的 update2 服务，故留空 => 启动时不会发起任何网络请求、
      * 也不会弹出更新对话框（等价于“停用更新检查入口”）。
-     * 想恢复更新提示：把下面改成你自己的 update2 地址即可（格式见 update-msg 模块）。
+     * 想恢复更新提示：把下面改成你自己的 update2 地址即可（该格式的生成工具已从本仓库移除）。
      */
     private const val UPDATE_URL = ""
     
