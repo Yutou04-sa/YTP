@@ -1,9 +1,9 @@
 name: Android CI
 
 # Builds the manager APK on every push/PR.
-# Pushing a version tag (e.g. `git tag v1.0 && git push ytp v1.0`) publishes a GitHub
-# Release whose version is the *tag* — the app's own versionName/versionCode
-# (build.gradle.kts: verName 2.2.0 / verCode 7854) stays untouched.
+# Pushing a version tag (e.g. `git tag v2.2.0 && git push ytp v2.2.0`) publishes a GitHub
+# Release with that tag. The app's own versionName/versionCode live in gradle/version.properties
+# and the release fails if the tag does not match `verName` there.
 
 on:
   push:
@@ -27,12 +27,15 @@ jobs:
       SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
       SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
       SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+      # Optional: SHA-256 of the expected signer certificate. When set together with the
+      # signing secrets the build refuses to publish an apk signed by another key.
+      SIGNING_CERT_SHA256: ${{ secrets.SIGNING_CERT_SHA256 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          # core's lsplugin.jgit reads git history (commit count / latest tag), so a
-          # shallow clone is not enough.
+          # lsplant derives its own version from git history (latest tag), so a shallow clone
+          # is not enough.
           fetch-depth: 0
 
       - name: Setup Java
@@ -64,7 +67,10 @@ jobs:
         # enough: lsplant / dex_builder use C++20 modules, which CMake refuses to generate
         # with Ninja < 1.11. Overwrite the bundled binary in every installed cmake package.
         run: |
+          set -euo pipefail
           curl -sSLo ninja.zip https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-linux.zip
+          # Pinned so a replaced upstream asset cannot inject a binary into the release build.
+          echo "6f98805688d19672bd699fbbfa2c2cf0fc054ac3df1f0e6a47664d963d530255  ninja.zip" | sha256sum -c -
           unzip -q ninja.zip
           chmod +x ninja
           sudo cp ninja /usr/local/bin/ninja
@@ -94,12 +100,51 @@ jobs:
       - name: Build release APK
         run: ./gradlew :manager:buildRelease --console=plain --stacktrace
 
+      - name: Verify the apk signature
+        # Never publish an apk whose signer we did not expect: the release is only as trustworthy
+        # as the certificate it is signed with. Set the SIGNING_CERT_SHA256 secret to the expected
+        # "Signer #1 certificate SHA-256 digest" to make the check mandatory. Without signing
+        # secrets the release is unsigned and this step only reports that fact.
+        run: |
+          set -euo pipefail
+          apksigner="$ANDROID_HOME/build-tools/37.0.0/apksigner"
+          for apk in out/release/*.apk; do
+            echo "== $apk"
+            report="$RUNNER_TEMP/apksigner-$(basename "$apk").txt"
+            if ! "$apksigner" verify --verbose --print-certs "$apk" > "$report" 2>&1; then
+              cat "$report"
+              if [ -n "${SIGNING_KEYSTORE_BASE64:-}" ]; then
+                echo "::error::$apk failed apksigner verification"
+                exit 1
+              fi
+              echo "::notice::$apk is not signed (no signing secrets configured)"
+              continue
+            fi
+            grep -i "certificate SHA-256 digest" "$report" || true
+            actual=$(grep -i "Signer #1 certificate SHA-256 digest" "$report" | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
+            if [ -n "${SIGNING_KEYSTORE_BASE64:-}" ] && [ -n "${SIGNING_CERT_SHA256:-}" ]; then
+              expected=$(echo "${SIGNING_CERT_SHA256}" | tr -d ':' | tr 'A-F' 'a-f')
+              if [ "$actual" != "$expected" ]; then
+                echo "::error::$apk is signed by ${actual}, expected ${expected}"
+                exit 1
+              fi
+            elif [ -n "${SIGNING_KEYSTORE_BASE64:-}" ]; then
+              echo "::warning::SIGNING_CERT_SHA256 is not set, the signer of $apk was not verified"
+            fi
+          done
+
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          (cd out/release && sha256sum *.apk | tee SHA256SUMS.txt)
+
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
           name: YTP-apk-${{ github.sha }}
           path: |
             out/release/*.apk
+            out/release/SHA256SUMS.txt
             manager/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
@@ -113,9 +158,17 @@ jobs:
         run: |
           set -euo pipefail
           ver="${TAG#v}"
+          # The tag must be the version stored in gradle/version.properties: the app's own
+          # versionName/versionCode come from that file, so a mismatching tag would publish an
+          # apk labelled with a different version than the release.
+          fileVer=$(grep -E '^verName=' gradle/version.properties | cut -d= -f2 | tr -d '[:space:]')
+          if [ "$ver" != "$fileVer" ]; then
+            echo "::error::tag ${TAG} does not match gradle/version.properties (verName=${fileVer})"
+            exit 1
+          fi
           gh release delete "$TAG" --yes 2>/dev/null || true
           gh release create "$TAG" \
             --latest \
             --title "YTP ${ver}" \
             --notes "Automatically built by [run ${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})." \
-            out/release/*.apk
+            out/release/*.apk out/release/SHA256SUMS.txt

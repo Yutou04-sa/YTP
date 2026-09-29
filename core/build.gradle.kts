@@ -59,16 +59,19 @@ cmaker {
     }
 }
 
-val repo = jgit.repo()
-val commitCount = (repo?.commitCount("refs/remotes/origin/master") ?: 1) + 4200
-val latestTag = repo?.latestTag?.removePrefix("v") ?: "1.0"
+// Version comes from the shared gradle/version.properties of the main build instead of the git
+// history: refs/remotes/origin/master belongs to the fork's upstream, so deriving the version
+// from it made the standalone core build report an arbitrary upstream version.
+val versionProps = java.util.Properties().apply {
+    file("../gradle/version.properties").inputStream().use { load(it) }
+}
 
 val injectedPackageName by extra("com.android.shell")
 val injectedPackageUid by extra(2000)
 
 val defaultManagerPackageName by extra("org.lsposed.manager")
-val verCode by extra(commitCount)
-val verName by extra(latestTag)
+val verCode by extra(versionProps.getProperty("verCode").trim().toInt())
+val verName by extra(versionProps.getProperty("verName").trim())
 val androidTargetSdkVersion by extra(36)
 val androidMinSdkVersion by extra(27)
 val androidBuildToolsVersion by extra("37.0.0")

@@ -13,10 +13,15 @@ plugins {
 // sync from https://github.com/JingMartix/LSPosed/blob/master/build.gradle.kts
 val defaultManagerPackageName by extra("org.ytp")
 val apiCode by extra(102)
-val verCode by extra(7854)
-val verName by extra("2.2.0")
-val coreVerCode by extra(7854)
-val coreVerName by extra("2.2.0")
+// Version is defined once in gradle/version.properties (also read by the standalone core build).
+val versionProps = java.util.Properties().apply {
+    file("gradle/version.properties").inputStream().use { load(it) }
+}
+val verCode by extra(versionProps.getProperty("verCode").trim().toInt())
+val verName by extra(versionProps.getProperty("verName").trim())
+// The embedded framework (core) ships with the manager, so it uses the same version.
+val coreVerCode by extra(verCode)
+val coreVerName by extra(verName)
 val androidMinSdkVersion by extra(28)
 val androidTargetSdkVersion by extra(36)
 val androidCompileSdkVersion by extra(37)
