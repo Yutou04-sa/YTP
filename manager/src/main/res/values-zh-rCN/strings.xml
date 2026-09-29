@@ -122,6 +122,8 @@
     <string name="about_module_manager_title">世界之门</string>
     <string name="about_module_manager_description">此功能不依赖YTP，修补后长按桌面应用图标即可打开「世界之门」界面</string>
     <string name="about_thanks">致谢</string>
+    <string name="about_license_title">开源与许可</string>
+    <string name="about_license_description">YTP 是 LSPatch 的二次修改版本（经由 HKP / HkPatch），以 GPL-3.0 授权。第三方组件声明见仓库中的 NOTICE 文件。</string>
 
     <!--Repo-->
     <string name="repo_update_time">更新时间</string>

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material3.Card
@@ -59,9 +60,11 @@ import org.ytp.R
 import org.ytp.ui.theme.YtpColors
 
 private val credits = listOf(
+    "HKP / HkPatch" to "https://github.com/wyx176/HKP",
     "LSPatch (JM)" to "https://github.com/JingMatrix/LSPatch",
     "LSPatch" to "https://github.com/LSPosed/LSPatch",
     "Vector" to "https://github.com/JingMatrix/Vector",
+    "LSPosed (JM)" to "https://github.com/JingMatrix/LSPosed",
     "LSPosed" to "https://github.com/LSPosed/LSPosed",
     "XPatch" to "https://github.com/WindySha/Xpatch",
     "libXposed" to "https://github.com/libxposed/api"
@@ -90,6 +93,8 @@ fun AboutScreen(navigator: DestinationsNavigator) {
             ModuleManagerCard()
 
             CreditsCard()
+
+            LicenseCard()
         }
     }
 }
@@ -357,6 +362,16 @@ private fun CreditsCard() {
             }
         }
     }
+}
+
+@Composable
+private fun LicenseCard() {
+    AboutInfoCard(
+        icon = Icons.Outlined.Description,
+        iconColor = YtpColors.AccentPurple,
+        title = stringResource(R.string.about_license_title),
+        description = stringResource(R.string.about_license_description)
+    )
 }
 
 @Composable

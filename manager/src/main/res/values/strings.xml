@@ -125,6 +125,8 @@
     <string name="about_module_manager_title">World Gate</string>
     <string name="about_module_manager_description">Does not rely on YTP. After patching, long-press the app icon on the home screen to open the World Gate screen</string>
     <string name="about_thanks">Credits</string>
+    <string name="about_license_title">Open source and license</string>
+    <string name="about_license_description">YTP is a modified build of LSPatch (via HKP/HkPatch), licensed under GPL-3.0. Third-party notices: see NOTICE in the repository.</string>
 
     <!--Repo-->
     <string name="repo_update_time">Time</string>
