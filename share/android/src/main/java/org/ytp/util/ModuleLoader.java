@@ -91,6 +91,7 @@ public class ModuleLoader {
     }
 
     public static PreLoadedApk loadModule(String path) {
+        Log.i(TAG, "ModuleLoader.loadModule(" + path + ")");
         if (path == null) return null;
         var file = new PreLoadedApk();
         var preLoadedDexes = new ArrayList<SharedMemory>();
@@ -107,7 +108,17 @@ public class ModuleLoader {
                 file.legacy = false;
                 readName(apkFile, MODERN_JAVA_INIT, moduleClassNames);
                 readName(apkFile, MODERN_NATIVE_INIT, moduleLibraryNames);
+                // 有些混合型模块带了 module.prop，却仍把 native 入口写在旧的 assets/native_init 里
+                // （例如 dyhelper：libvideo_speed_patch.so）。没有这个回退，moduleLibraryNames 会是空的，
+                // NativeAPI.recordNativeEntrypoint() 就不会登记它，模块的 native_init() 永远不会被调用。
+                if (moduleLibraryNames.isEmpty()) {
+                    readName(apkFile, LEGACY_NATIVE_INIT, moduleLibraryNames);
+                }
             }
+            Log.i(TAG, "  metadata: legacy=" + file.legacy
+                    + " hasLegacyJavaEntry=" + hasLegacyJavaEntry
+                    + " hasModernMetadata=" + hasModernMetadata
+                    + " classes=" + moduleClassNames + " libs=" + moduleLibraryNames);
             if (moduleClassNames.isEmpty() && moduleLibraryNames.isEmpty()) {
                 Log.w(TAG, "No Xposed entry point found in " + path);
                 return null;
@@ -129,6 +140,9 @@ public class ModuleLoader {
         file.preLoadedDexes = preLoadedDexes;
         file.moduleClassNames = moduleClassNames;
         file.moduleLibraryNames = moduleLibraryNames;
+        Log.i(TAG, "  loadModule ok: legacy=" + file.legacy
+                + " preLoadedDexes=" + preLoadedDexes.size()
+                + " classes=" + moduleClassNames + " libs=" + moduleLibraryNames);
         return file;
     }
 }

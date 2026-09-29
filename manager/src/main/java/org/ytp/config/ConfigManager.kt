@@ -33,8 +33,9 @@ object ConfigManager {
                     moduleDao.delete(module)
                     loadedModules.remove(module)
                 } else if (module.apkPath != apkPath) {
-                    module.apkPath = apkPath
                     loadedModules.remove(module)
+                    // apkPath 变化时必须落库（原先只改内存副本，重启后又变回旧路径）
+                    moduleDao.updateApkPath(module.pkgName, apkPath)
                 }
             }
             for ((pkgName, apkPath) in newModules) {
@@ -75,23 +76,27 @@ object ConfigManager {
     suspend fun getModuleFilesForApp(pkgName: String): List<org.lsposed.lspd.models.Module> =
         withContext(dispatcher) {
             val modules = scopeDao.getModulesForApp(pkgName)
-            return@withContext modules.mapNotNull {
-                if (!File(it.apkPath).exists()) {
-                    loadedModules.remove(it)
+            return@withContext modules.mapNotNull { module ->
+                var apkPath = module.apkPath
+                if (!File(apkPath).exists()) {
+                    loadedModules.remove(module)
                     try {
-                        it.apkPath = _root_ide_package_.org.ytp.lspApp.packageManager.getApplicationInfo(it.pkgName, 0).sourceDir
+                        apkPath = _root_ide_package_.org.ytp.lspApp.packageManager.getApplicationInfo(module.pkgName, 0).sourceDir
                     } catch (e: PackageManager.NameNotFoundException) {
-                        moduleDao.delete(moduleDao.getModule(it.pkgName))
-                        Log.w(TAG, "Module may be uninstalled: ${it.pkgName}")
+                        moduleDao.delete(moduleDao.getModule(module.pkgName))
+                        Log.w(TAG, "Module may be uninstalled: ${module.pkgName}")
                         return@mapNotNull null
                     }
-                    Log.i(TAG, "Module apk path updated: ${it.pkgName}")
+                    // 路径变化同步落库，并用新实例作为缓存 key，避免旧 key 残留在 loadedModules
+                    moduleDao.updateApkPath(module.pkgName, apkPath)
+                    Log.i(TAG, "Module apk path updated: ${module.pkgName}")
                 }
-                loadedModules.getOrPut(it) {
+                val key = module.copy(apkPath = apkPath)
+                loadedModules.getOrPut(key) {
                     org.lsposed.lspd.models.Module().apply {
-                        packageName = it.pkgName
-                        apkPath = it.apkPath
-                        file = ModuleLoader.loadModule(it.apkPath)
+                        packageName = key.pkgName
+                        apkPath = key.apkPath
+                        file = ModuleLoader.loadModule(key.apkPath)
                     }
                 }
             }

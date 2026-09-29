@@ -19,6 +19,9 @@ interface ModuleDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(module: Module)
 
+    @Query("UPDATE module SET apkPath = :apkPath WHERE pkgName = :pkgName")
+    suspend fun updateApkPath(pkgName: String, apkPath: String)
+
     @Delete
     suspend fun delete(module: Module)
 }

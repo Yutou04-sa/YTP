@@ -98,6 +98,10 @@ public class LSPosedContext implements XposedInterface {
     public static boolean loadModule(ActivityThread at, Module module) {
         try {
             Log.d(TAG, "Loading module " + module.packageName);
+            if (module.file == null) {
+                Log.w(TAG, "  Cannot load module " + module.packageName + ": no module metadata");
+                return false;
+            }
             if (module.file.moduleClassNames.isEmpty()) {
                 if (module.file.moduleLibraryNames.isEmpty()) return false;
                 module.file.moduleLibraryNames.forEach(NativeAPI::recordNativeEntrypoint);
@@ -119,10 +123,22 @@ public class LSPosedContext implements XposedInterface {
             }
             var ctx = new LSPosedContext(module.packageName, module.applicationInfo, module.service);
             if(!module.file.legacy){
+                Log.i(TAG, "  modern module: classes=" + module.file.moduleClassNames + " libs=" + module.file.moduleLibraryNames);
                 Class<?> helperClass = mcl.loadClass(XposedServiceHelper.class.getName());
                 Method onBinderReceivedMethod = helperClass.getDeclaredMethod("onBinderReceived", android.os.IBinder.class);
                 onBinderReceivedMethod.setAccessible(true);
-                onBinderReceivedMethod.invoke(null, new LSPModuleService(module.packageName,module).asBinder());
+                // 诊断（Debug 级）：反射不走 invoke 解析，可确认 asBinder 实际声明在哪一层
+                try {
+                    var asBinderMethod = LSPModuleService.class.getMethod("asBinder");
+                    Log.d(TAG, "  LSPModuleService super=" + LSPModuleService.class.getSuperclass()
+                            + ", asBinder declared in " + asBinderMethod.getDeclaringClass());
+                } catch (Throwable t) {
+                    Log.d(TAG, "  LSPModuleService.asBinder reflection lookup failed", t);
+                }
+                // 不要调用 asBinder()：LSPModuleService 继承 android.os.Binder，本身就是 IBinder。
+                // 原实现 `new LSPModuleService(...).asBinder()` 编译出的 invoke-virtual 在 ART 上会被解析到
+                // 抽象接口方法 android.os.IInterface.asBinder()，抛 AbstractMethodError，导致 libxposed 模块永远加载不上。
+                onBinderReceivedMethod.invoke(null, new LSPModuleService(module.packageName, module));
             }
             LSPDataCallback.getInstance().log(android.util.Log.INFO, TAG, "Loaded module " + module.packageName);
             for (var entry : module.file.moduleClassNames) {
