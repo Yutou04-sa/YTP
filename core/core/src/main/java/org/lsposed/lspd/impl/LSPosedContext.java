@@ -127,17 +127,11 @@ public class LSPosedContext implements XposedInterface {
                 Class<?> helperClass = mcl.loadClass(XposedServiceHelper.class.getName());
                 Method onBinderReceivedMethod = helperClass.getDeclaredMethod("onBinderReceived", android.os.IBinder.class);
                 onBinderReceivedMethod.setAccessible(true);
-                // 诊断（Debug 级）：反射不走 invoke 解析，可确认 asBinder 实际声明在哪一层
-                try {
-                    var asBinderMethod = LSPModuleService.class.getMethod("asBinder");
-                    Log.d(TAG, "  LSPModuleService super=" + LSPModuleService.class.getSuperclass()
-                            + ", asBinder declared in " + asBinderMethod.getDeclaringClass());
-                } catch (Throwable t) {
-                    Log.d(TAG, "  LSPModuleService.asBinder reflection lookup failed", t);
-                }
-                // 不要调用 asBinder()：LSPModuleService 继承 android.os.Binder，本身就是 IBinder。
-                // 原实现 `new LSPModuleService(...).asBinder()` 编译出的 invoke-virtual 在 ART 上会被解析到
-                // 抽象接口方法 android.os.IInterface.asBinder()，抛 AbstractMethodError，导致 libxposed 模块永远加载不上。
+                // Pass the service instance itself, never `new LSPModuleService(...).asBinder()`: although
+                // LSPModuleService extends android.os.Binder and is therefore already an IBinder, the
+                // invoke-virtual that the old call compiled to resolves to the *interface* method
+                // android.os.IInterface.asBinder() on ART, which throws AbstractMethodError and keeps
+                // libxposed modules from ever loading.
                 onBinderReceivedMethod.invoke(null, new LSPModuleService(module.packageName, module));
             }
             LSPDataCallback.getInstance().log(android.util.Log.INFO, TAG, "Loaded module " + module.packageName);
