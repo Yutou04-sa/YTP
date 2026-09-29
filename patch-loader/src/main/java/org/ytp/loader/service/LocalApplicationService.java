@@ -1,3 +1,12 @@
+/*
+ * This file is part of YTP, a modified version of LSPatch (via HKP / HkPatch).
+ * SPDX-License-Identifier: GPL-3.0-only
+ *
+ * Upstream copyright belongs to the LSPatch / LSPosed / Xpatch authors; the
+ * modifications made in this repository are documented in the NOTICE file and
+ * in the git history. See LICENSE for the full licence text.
+ */
+
 package org.ytp.loader.service;
 
 import static org.ytp.share.Constants.EMBEDDED_MODULES_ASSET_PATH;
