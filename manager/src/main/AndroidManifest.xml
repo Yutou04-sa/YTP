@@ -42,6 +42,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!--
+          注意：该 alias 目前是 enabled="false"，且工程内没有任何 setComponentEnabledSetting
+          调用去动态启用它，所以它实际处于“停用”状态，不会响应下面的 VIEW intent-filter。
+          这里刻意保留组件与 intent-filter 约定（不删除）：APK 安装入口走 MainActivity +
+          HomeScreen 对 ACTION_VIEW 的校验。若要真正启用，需要在使用前调用
+          PackageManager.setComponentEnabledSetting 打开它。
+        -->
         <activity-alias
             android:name=".ui.activity.InstallActivity"
             android:enabled="false"

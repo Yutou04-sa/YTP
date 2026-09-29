@@ -1,4 +1,3 @@
-<!-- 说明：本项目派生自一个 GPL-3.0 的上游项目，公开分发时请自行补上对上游的署名与本仓库地址。 -->
 # YTP Framework
 
 [![Android CI](https://github.com/Yutou04-sa/YTP/actions/workflows/android.yml/badge.svg)](https://github.com/Yutou04-sa/YTP/actions/workflows/android.yml) [![Download](https://img.shields.io/github/v/release/Yutou04-sa/YTP?color=orange&logoColor=orange&label=Download&logo=DocuSign)](https://github.com/Yutou04-sa/YTP/releases/latest) [![Total](https://shields.io/github/downloads/Yutou04-sa/YTP/total?logo=Bookmeter&label=Counts&logoColor=yellow&color=yellow)](https://github.com/Yutou04-sa/YTP/releases)
@@ -130,6 +129,7 @@ For stable releases, please go to [Github Releases page](https://github.com/Yuto
 
 ## Credits
 
+- [HKP](https://github.com/wyx176/HKP): 本仓库直接 fork 的 GPL-3.0 上游（YTP 的补丁管线与摊平的 `core/` 均来自它；YTP 的差异见下文）
 - [LSPosed](https://github.com/JingMatrix/LSPosed): Core framework
 - [Xpatch](https://github.com/WindySha/Xpatch): Fork source
 - [Apkzlib](https://android.googlesource.com/platform/tools/apkzlib): Repacking tool
