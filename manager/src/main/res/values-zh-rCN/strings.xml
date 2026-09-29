@@ -77,6 +77,7 @@
     <string name="settings_keystore_wrong_password">密钥库密码错误</string>
     <string name="settings_keystore_wrong_alias">别名错误</string>
     <string name="settings_keystore_wrong_alias_password">别名密码错误</string>
+    <string name="settings_keystore_builtin_warning">内置密钥随 APK 一起发布，等同于公开密钥：用它打补丁的应用，任何人都能伪造出可原地升级的安装包。正式发布前请导入自己的密钥库。</string>
     <string name="settings_detail_patch_logs">详细修补日志</string>
     <string name="settings_storage_directory">更改存储目录</string>
     <string name="settings_about">关于</string>

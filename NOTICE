@@ -1,0 +1,83 @@
+Third-party notices for YTP
+===========================
+
+YTP is a fork of HKP <https://github.com/wyx176/HKP> and is distributed under the GNU
+General Public License v3.0 — see `LICENSE` (the vendored core carries its own copy in
+`core/LICENSE`). The components listed below are bundled in this source tree, linked into
+the build, or shipped inside the released APK, and each one keeps its own terms. Where a
+component ships a license text, that text is authoritative and sits next to its sources;
+this file is a summary, not a replacement for it.
+
+If you believe a component is listed wrongly or is redistributed here without a right you
+hold, please open an issue at <https://github.com/Yutou04-sa/YTP/issues> and it will be
+corrected or removed.
+
+
+1. Vendored sources (rootless Xposed core, `core/`)
+--------------------------------------------------
+
+  * `core/` — the rootless Xposed framework core (LSPosed API, bridges, services),
+    derived from LSPosed <https://github.com/JingMatrix/LSPosed> and the Xpatch fork
+    <https://github.com/WindySha/Xpatch>. **GPL-3.0** (`core/LICENSE`).
+  * `core/external/lsplant` — LSPlant, the ART hooking library (LSPosed).
+    **LGPL-3.0** (`core/external/lsplant/LICENSE`).
+  * `core/external/lsplt` — LSPlt, the native PLT hooking library.
+    **LGPL-3.0**.
+  * `core/external/dobby` — Dobby, the inline hooking engine.
+    **Apache-2.0**.
+  * `core/external/fmt` — {fmt}, the formatting library. **MIT**.
+  * `core/external/xz-embedded` — XZ Embedded. Permissive / public-domain-style terms,
+    see its own `COPYING`.
+  * `core/external/apache/commons-lang` — Apache Commons Lang. **Apache-2.0**
+    (`LICENSE.txt`, `NOTICE.txt` inside it).
+  * `core/external/axml/manifest-editor` — ManifestEditor
+    <https://github.com/WindySha/ManifestEditor>, a fork of Sable/axml, also used by
+    Xpatch. **Upstream ships no license file.** It is included unmodified with its
+    original file headers. If you own the rights to this code and object to its
+    redistribution here, open an issue and it will be removed.
+
+
+2. Code decompiled from MT Manager (`patch/src/main/java/bin/`)
+---------------------------------------------------------------
+
+  * `bin/mt/apksign/` (`data/`, `key/` included) — APK Signature Scheme v2/v3 signing:
+    builds the APK Signing Block and inserts it in place.
+  * `bin/zip/` — ZIP reading and writing: `DataMultiplexing` implements the
+    "original-APK data multiplexing" the patch pipeline relies on (a patched APK keeps
+    the untouched original APK inside it, and the entries copied from it share that data
+    area instead of being duplicated), plus streaming signatures and alignment.
+  * `bin/io/` — random-access helpers used by the two packages above.
+
+  Every file in these three packages carries its original `@author Bin` header. They are
+  decompiled from **MT Manager** (MT管理器) <https://mt2.cn>. **We could not find license
+  terms for this code.** It is kept because the patch pipeline depends on it: `bin.zip`
+  is what makes a patched app cost one copy of the original APK instead of two, and
+  `bin.mt.apksign` is the only signer we found that can sign such a multiplexed archive
+  in place — Google's apksig rewrites every entry, which duplicates the multiplexed data
+  and roughly doubles the artefact (measured on a synthetic multiplexed APK:
+  11 983 321 B → 23 725 457 B, against 11 990 608 B when signed by `bin.mt.apksign`).
+  If you own the rights to this code and object to its redistribution here, open an
+  issue and it will be removed.
+
+
+3. Libraries resolved from Maven (bundled into the APKs)
+--------------------------------------------------------
+
+  * AndroidX, Jetpack Compose, Kotlin standard library, Room, Guava, Gson,
+    Apache Commons IO, JCommander, apkzlib and apksig (Google), RikkaW HiddenApi and
+    HiddenApiRefinePlugin — **Apache-2.0** (the license text is part of each artifact;
+    for the two Rikka projects see their upstream `LICENSE`).
+  * smali / dexlib2 — **BSD-3-Clause** (Ben Gruver, <https://github.com/google/smali>).
+
+
+4. Assets and artwork
+---------------------
+
+  * The launcher icon keeps the upstream LSPosed-style artwork (GPL-3.0) with a teal
+    recolour. Every other icon comes from Material's icon set (Apache-2.0). No other
+    third-party artwork is bundled.
+  * `manager/src/main/assets/keystore` is **not** third-party material: it is the
+    maintainer's own release keystore, shipped so that a patched app is signed with the
+    same certificate as the manager. Because it is published here, treat it as a public
+    key and import your own keystore before distributing your own builds — see the
+    "Changes in this fork" section of `README.md`.

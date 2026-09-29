@@ -80,6 +80,7 @@
     <string name="settings_keystore_wrong_password">Wrong keystore password</string>
     <string name="settings_keystore_wrong_alias">Wrong alias name</string>
     <string name="settings_keystore_wrong_alias_password">Wrong alias password</string>
+    <string name="settings_keystore_builtin_warning">The built-in keystore ships inside this APK, so it is a public key: anyone can sign an update for an app patched with it. Import your own keystore before distributing builds.</string>
     <string name="settings_storage_directory">change storage directory</string>
     <string name="settings_detail_patch_logs">Detail patch logs</string>
     <string name="settings_about">About</string>

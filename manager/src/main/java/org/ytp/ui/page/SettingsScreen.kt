@@ -369,6 +369,7 @@ private fun KeyStore() {
         onDismissRequest = { expanded = false },
         onClick = { expanded = true },
         surface = {
+          Column {
             SettingRow(
                 icon = Icons.Outlined.Ballot,
                 title = stringResource(R.string.settings_keystore),
@@ -396,6 +397,15 @@ private fun KeyStore() {
                     }
                 }
             )
+            if (MyKeyStore.useDefault) {
+                Text(
+                    text = stringResource(R.string.settings_keystore_builtin_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
+                )
+            }
+          }
         }
     ) {
         val allKeyStores = MyKeyStore.getAllKeyStores()

@@ -118,6 +118,45 @@ For stable releases, please go to [Github Releases page](https://github.com/Yuto
   `update-msg/`) to re-enable it — don't point it at the upstream endpoint, whose downloads are signed
   with a different key.
 
+## Permissions
+
+The manager is a patching tool, and its manifest is honest about that:
+
+- `MANAGE_EXTERNAL_STORAGE` (plus `READ_EXTERNAL_STORAGE` up to API 32 and
+  `WRITE_EXTERNAL_STORAGE` up to API 28) — read the APK(s) you select and write the patched
+  APK or an exported backup where you point it. Where the system allows it, the "pick a
+  folder" (SAF) flow is used instead and grants access to that folder only.
+- `QUERY_ALL_PACKAGES` (with `com.android.permission.GET_INSTALLED_APPS`) — list the installed
+  apps so you can pick one to patch, and tell whether a module or a patched app is still
+  installed.
+- `REQUEST_INSTALL_PACKAGES`, `REQUEST_DELETE_PACKAGES` — hand the patched APK to the system
+  installer, and uninstall/restore through one `PackageInstaller` session.
+- `INTERNET` — load the module repository list and module details.
+- `GET_ACCOUNTS`, `GET_TASKS`, `KILL_BACKGROUND_PROCESSES` — inherited from upstream, not used
+  by any code in this fork.
+
+There are no location, camera, microphone, contacts, telephony or advertising permissions, no
+analytics and no telemetry; the in-app update check is disabled (see above).
+
+## Known limitations
+
+- **A patched app keeps the framework it was patched with.** `core.so`, `libytp.so` and the
+  loader dexes are copied into the target APK at patch time, so nothing you change in the
+  manager afterwards reaches an app that is already patched — patch it again (the **Patched
+  apps** page rebuilds it from the backup) to pick up a fix.
+- The framework libraries are added for the ABIs it is built for (`arm64-v8a`, `armeabi-v7a`,
+  `x86`, `x86_64`); an ABI it has no library for is skipped instead of failing the patch, and
+  that ABI then runs unpatched.
+- **A module app cannot be "activated" from its own UI** in a rootless setup: the framework
+  only ever runs inside the patched host app, and there is no service channel back to a
+  module's own process. Modules that check "am I activated / did you accept the agreement"
+  inside their own app therefore refuse to hook — for example
+  `com.ss.android.ugc.aweme.yyds` keeps logging `未同意使用协议` and does nothing, although the
+  framework does load it into the host (`Loaded external module: …`). A rooted
+  Xposed/LSPosed installation is needed for those modules.
+- A rename patch keeps the original authorities and compile-time constants — see the rename
+  note above.
+
 ## Repository layout
 
 - `manager/` — the manager app (Kotlin, Jetpack Compose).
@@ -133,6 +172,17 @@ For stable releases, please go to [Github Releases page](https://github.com/Yuto
 - [LSPosed](https://github.com/JingMatrix/LSPosed): Core framework
 - [Xpatch](https://github.com/WindySha/Xpatch): Fork source
 - [Apkzlib](https://android.googlesource.com/platform/tools/apkzlib): Repacking tool
+- [MT Manager](https://mt2.cn): `patch/src/main/java/bin/{mt,zip,io}` 反编译自它 —— 原地 APK v2/v3 签名与“原包复用”所依赖的 ZIP 层（未找到上游许可证，见 [`NOTICE`](NOTICE)）
+- [ManifestEditor](https://github.com/WindySha/ManifestEditor): `core/external/axml` 下的 [axml](https://github.com/Sable/axml) 编辑器（未找到上游许可证，见 [`NOTICE`](NOTICE)）
+
+## Third-party notices
+
+This tree and the released APK bundle other people's work: a rootless Xposed core derived from
+LSPosed/Xpatch (GPL-3.0) and the projects vendored under `core/external` (LGPL-3.0, Apache-2.0,
+MIT), the Maven dependencies (Apache-2.0 / BSD-3-Clause), and code decompiled from MT Manager
+under `patch/src/main/java/bin/`, whose upstream license could not be found and which is kept
+because the patch pipeline depends on its in-place APK signing and its original-APK data
+multiplexing. What each part is, and under which terms, is listed in [`NOTICE`](NOTICE).
 
 ## License
 
