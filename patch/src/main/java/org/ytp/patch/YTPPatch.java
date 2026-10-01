@@ -54,10 +54,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -71,17 +72,16 @@ import bin.mt.apksign.V2V3SchemeSigner;
 import bin.mt.apksign.key.BksSignatureKey;
 
 /**
- * LSPatch class for patching APK files
- * Supports command-line argument processing, APK modification, signing and more
+ * APK 修补入口：解析参数、执行修补回退，并在普通修补成功后发布和签名结果。
  */
 public class YTPPatch {
 
     /**
-     * Custom exception class representing errors in the patching process
+     * 修补流程错误。保留 Error 基类以兼容已有调用方。
      */
     static class PatchError extends Error {
         public PatchError(String message, Throwable cause) {
-            super(message+"\n"+cause.getMessage(), cause);
+            super(message + ": " + cause.getMessage(), cause);
         }
 
         PatchError(String message) {
@@ -104,12 +104,6 @@ public class YTPPatch {
     @Parameter(names = {"-p", "--packageName"}, description = "Patch with packageName")
     private String packageName = "";
 
-    @Parameter(names = {"-n", "--newPackageName"}, description = "Rename the manifest package (application id) of the patched apk")
-    private String newPackageName = "";
-
-    @Parameter(names = {"-l", "--label"}, description = "Override the application label of the patched apk")
-    private String appLabel = "";
-
     @Parameter(names = {"-k", "--keystore"}, arity = 5, description = "Set custom signature keystore. Followed by 5 arguments: keystore path, keystore password, keystore alias, keystore alias password,keystore name")
     public List<String> keystoreArgs = Arrays.asList(null, Constants.KEY_STORE_PASSWORD, Constants.KEY_STORE_ALIAS, Constants.KEY_STORE_ALIAS_PASSWORD, Constants.KEY_STORE_ALIAS);
 
@@ -119,14 +113,20 @@ public class YTPPatch {
     @Parameter(names = {"-m", "--embed"}, description = "Embed provided modules to apk")
     private List<String> modules = new ArrayList<>();
 
+    @Parameter(names = {"-n", "--newPackageName"}, description = "Rename the manifest package (application id) of the patched apk")
+    private String newPackageName = "";
+
+    @Parameter(names = {"-l", "--label"}, description = "Override the application label of the patched apk")
+    private String appLabel = "";
+
     public Apk apk = null;
 
-    private static final HashSet<String> ARCHES = new HashSet<>(Arrays.asList(
+    private static final List<String> ARCHES = List.of(
             "armeabi-v7a",
             "arm64-v8a",
             "x86",
             "x86_64"
-    ));
+    );
 
     /**
      * Type descriptor of a class that only the metaloader dex defines. Update patches use it to
@@ -134,6 +134,20 @@ public class YTPPatch {
      */
     private static final byte[] LOADER_DEX_MARKER =
             "Landroidx/app/Init;".getBytes(StandardCharsets.US_ASCII);
+
+    /**
+     * Asset paths of the branding this fork used before it was renamed (HkPatch / HKP). That
+     * framework is the same one - equal proxy component factory, equal metaloader, only the asset
+     * directory and the native lib name differ - so an apk patched back then is patched in place
+     * instead of getting a second loader stacked on top of it.
+     */
+    private static final String LEGACY_ASSETS_PATCH = "assets/hkp/";
+
+    private static final String[] LEGACY_PATCH_MARKERS = {
+            LEGACY_ASSETS_PATCH + "config.json",
+            LEGACY_ASSETS_PATCH + "core.so",
+            LEGACY_ASSETS_PATCH + "loader.dex",
+    };
 
     public static final ZFileOptions Z_FILE_OPTIONS = new ZFileOptions().setAlignmentRule(AlignmentRules.compose(
             AlignmentRules.constantForSuffix(".so", 4096),
@@ -149,12 +163,15 @@ public class YTPPatch {
     private String outputFile;
 
     private boolean updatePatch = false;
+
     /**
-     * Constructor to initialize LSPatch instance
-     *
-     * @param logger Logger instance
-     * @param args   Command-line arguments
+     * Whether the apk being patched carries a patch of the branding used before the rename, whose
+     * assets have to be dropped while the patch is upgraded (see [LEGACY_PATCH_MARKERS]).
      */
+    private boolean legacyPatch = false;
+    /** 修补内嵌 APK 时暂缓最终签名，由外层容器策略完成发布。 */
+    protected boolean deferOutputFinalization = false;
+    /** 解析修补参数，并保留日志器供各回退策略复用。 */
     public YTPPatch(Logger logger, String... args) {
         this.args = args;
         jCommander = JCommander.newBuilder().addObject(this).build();
@@ -171,14 +188,10 @@ public class YTPPatch {
 
         this.logger = logger;
         logger.verbose = verbose;
+        this.apk = new Apk().setPackageName(packageName);
     }
 
-    /**
-     * Main entry point
-     *
-     * @param args Command-line arguments
-     * @throws IOException IO exception
-     */
+    /** 命令行入口。 */
     public static void main(String... args) throws Exception{
         YTPPatch ytp = new YTPPatch(new JavaLogger(), args);
         if (ytp.help) {
@@ -192,17 +205,18 @@ public class YTPPatch {
         }
     }
 
-    /**
-     * Process command-line arguments and execute APK patching
-     *
-     * @throws PatchError  Patch error
-     * @throws IOException IO exception
-     */
+    /** 每个大阶段只输出一次耗时，便于区分磁盘复制、比对、重建和签名。 */
+    public void logDuration(String stage, long startedAt) {
+        logger.i(stage + "Duration：" + ((System.nanoTime() - startedAt) / 1_000_000) + " ms");
+    }
+
+    /** 执行命令行修补，并在退出时关闭进度监控线程。 */
     public void doCommandLine() throws Exception {
-        doPatchProcess();
-        logger.i("Writing apk...");
-        //关闭线程池
-        if(monitorExecutor != null && !monitorExecutor.isShutdown() && !monitorExecutor.isTerminated()){
+        try {
+            doPatchProcess();
+            logger.i("Writing apk...");
+        } finally {
+            // 即使修补或签名失败，也不能留下进度监控线程。
             monitorExecutor.shutdown();
         }
     }
@@ -211,39 +225,32 @@ public class YTPPatch {
      * 实际的补丁处理过程
      */
     private void doPatchProcess() throws Exception {
-        apk = new Apk();apk.setPackageName(packageName);
-        if(packageName.isEmpty()){
-            throw new PatchError("PackageName is Not null");
+        if (packageName == null || packageName.isEmpty()) {
+            throw new PatchError("Package name must not be empty");
         }
-        for (var apkPath : apkPaths) {
-            //不支持多个
-            if(apkPaths.size() > 1 && apkPath.contains("/split_")){
+        for (String apkPath : apkPaths) {
+            // 当前只处理主 APK，跳过多文件输入中的 split APK。
+            File srcApkFile = new File(apkPath).getAbsoluteFile();
+            if (apkPaths.size() > 1 && srcApkFile.getName().startsWith("split_")) {
                 continue;
             }
-            File srcApkFile = new File(apkPath).getAbsoluteFile();
-
+            apk = new Apk().setPackageName(packageName);
             String apkFileName = srcApkFile.getName();
-
-            var outputDir = new File(outputPath);
-            outputDir.mkdirs();
+            File outputDir = new File(outputPath).getAbsoluteFile();
+            Files.createDirectories(outputDir.toPath());
 
             outputFile = new File(outputDir, String.format(
-                    Locale.getDefault(), "%s-%d" + PATCH_FILE_SUFFIX,
+                    Locale.ROOT, "%s-%d" + PATCH_FILE_SUFFIX,
                     FilenameUtils.getBaseName(apkFileName),
                     YTPConfig.instance.VERSION_CODE)
             ).getAbsolutePath();
 
-            logger.i("Processing \n" + srcApkFile + "\n -> \n" + outputFile);
-            if(!srcApkFile.getAbsolutePath().contains("/cache/")){
-                // Never reuse a fixed temporary name: the next source apk of the same run would
-                // hit FileAlreadyExistsException and fail the whole patch. Keep the name derived
-                // from the source so a split still produces its own output file.
-                File file = new File(outputDir, "work-" + apkFileName);
-                Files.copy(srcApkFile.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                patch(file);
-            }else {
-                patch(srcApkFile);
+            File destination = new File(outputFile);
+            if (destination.exists() && !forceOverwrite) {
+                throw new PatchError("Output APK already exists: " + destination);
             }
+            logger.i("Processing \n" + srcApkFile + "\n -> \n" + outputFile);
+            patch(srcApkFile);
         }
     }
     
@@ -253,23 +260,94 @@ public class YTPPatch {
     }
     
     /**
-     * Main method for patching APK files
-     *
-     * @param srcApkFile Source APK file
-     * @throws PatchError  Patch error
-     * @throws IOException IO exception
+     * 修补单个 APK。普通策略和容器回退策略都先写到目标目录中的临时文件，
+     * 签名成功后再移动到目标路径，避免失败时破坏输入或现有输出。
      */
     public void patch(File srcApkFile) throws Exception {
-        if (!srcApkFile.exists())
-            throw new PatchError("The source apk file does not exit. Please provide a correct path.");
+        if (!srcApkFile.isFile()) {
+            throw new PatchError("Source APK does not exist: " + srcApkFile);
+        }
+        if (apk == null || apk.getPackageName() == null || apk.getPackageName().isEmpty()) {
+            throw new PatchError("Package name must not be empty");
+        }
 
-        logger.i("Parsing original apk...");
+        boolean directPatch = outputFile == null;
+        File target = directPatch ? srcApkFile : new File(outputFile);
+        // 在目标目录创建文件，使最终移动只更新目录项，不增加一次整包复制。
+        File fallbackOutput = Files.createTempFile(target.getAbsoluteFile().getParentFile().toPath(),
+                "ytp-output-", ".apk").toFile();
+        try {
+            File standardResult = patchWithFallbacks(srcApkFile, fallbackOutput);
+            if (standardResult == null) {
+                // 回退策略已构建并签名容器；只有完整结果才对外可见。
+                moveResult(fallbackOutput, target, directPatch);
+                return;
+            }
+            try {
+                if (apk.getPatchFile().isEmpty() && !deferOutputFinalization) {
+                    // 在发布前完成签名，避免签名失败时留下不完整的目标文件。
+                    signApk(standardResult);
+                    moveResult(standardResult, target, directPatch);
+                } else {
+                    // 内嵌 APK 是中间文件；由外层策略继续组装和签名。
+                    Files.move(standardResult.toPath(), srcApkFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                }
+            } finally {
+                deleteTemporaryFile(standardResult);
+            }
+        } finally {
+            deleteTemporaryFile(fallbackOutput);
+        }
+    }
+
+    /** 输出和输入可能位于同一路径；仅在直接修补或指定覆盖时替换现有文件。 */
+    private void moveResult(File source, File target, boolean directPatch) throws IOException {
+        if (forceOverwrite || directPatch) {
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } else {
+            Files.move(source.toPath(), target.toPath());
+        }
+    }
+
+    /** 修补内嵌 APK 时暂缓发布；外层容器完成后由相应策略统一签名。 */
+    protected final void patchIntermediateApk(File source) throws Exception {
+        boolean previous = deferOutputFinalization;
+        deferOutputFinalization = true;
+        try {
+            patch(source, apk);
+        } finally {
+            deferOutputFinalization = previous;
+        }
+    }
+
+    protected final void signApk(File file) throws Exception {
+        V2V3SchemeSigner.sign(file,
+                new BksSignatureKey(keystoreArgs.get(0), keystoreArgs.get(1),
+                        keystoreArgs.get(2), keystoreArgs.get(3)), true, true);
+    }
+
+    /** 清理不能覆盖修补失败的原始异常；Windows 上 ZIP 打开失败时文件可能暂时被占用。 */
+    private void deleteTemporaryFile(File file) {
+        try {
+            Files.deleteIfExists(file.toPath());
+        } catch (IOException cleanupError) {
+            file.deleteOnExit();
+            logger.e("Could not delete temporary file: " + file + ": " + cleanupError.getMessage());
+        }
+    }
+
+    /**
+     * 在独立候选副本上用 ZFile 修改 APK。先合并容器条目和 Manifest，
+     * 再写入运行所需的配置、核心库、ABI 对应的原生库及 loader DEX。
+     * 回退条件由 PatchFallbackPipeline 统一判断。
+     */
+    private void patchStandard(File srcApkFile) throws Exception {
         try (var srcZFile = ZFile.openReadWrite(srcApkFile,Z_FILE_OPTIONS)) {
             //检测是否有更新补丁
             checkUpdatePatch(srcZFile);
 
             embedPatchFile(srcZFile);
-            var manifestEntry = srcZFile.get(ANDROID_MANIFEST_XML);
+            StoredEntry manifestEntry = srcZFile.get(ANDROID_MANIFEST_XML);
             if (manifestEntry == null)
                 throw new PatchError("Provided file is not a valid apk");
 
@@ -293,21 +371,21 @@ public class YTPPatch {
             try (var manifestEntryIs = manifestEntry.open();
                     var is = new ByteArrayInputStream(modifyManifestFile(manifestEntryIs, config, pair.permissions, pair.use_permissions, pair.activity_names))) {
                 srcZFile.add(ANDROID_MANIFEST_XML, is);
-            } catch (Throwable e) {
+            } catch (Exception e) {
                 throw new PatchError("Error when modifying manifest", e);
             }
 
             logger.i("Adding config...");
             try (var is = new ByteArrayInputStream(configBytes)) {
                 srcZFile.add(CONFIG_ASSET_PATH, is);
-            } catch (Throwable e) {
+            } catch (Exception e) {
                 throw new PatchError("Error when saving config", e);
             }
 
             logger.i("Adding core.so..");
             try (var is = ByteUtil.getResourceAsStream(LOADER_CORE_SO_PATH)) {
                 srcZFile.add(LOADER_CORE_SO_PATH, is);
-            } catch (Throwable e) {
+            } catch (Exception e) {
                 throw new PatchError("Error when adding assets", e);
             }
 
@@ -321,6 +399,16 @@ public class YTPPatch {
                         e.delete();
                     } catch (IOException ex) {
                         logger.e("Failed to delete embedded module entry " + name + ": " + ex);
+                    }
+                }
+                //升级旧品牌（HkPatch/HKP）的补丁时把它那套资源清掉：新补丁写的是 assets/ytp/**，
+                //旧的那份留着既占体积，其中的 metaloader dex 也已经由 removePreviousMetaloaderDex 删掉。
+                else if (legacyPatch && name.startsWith(LEGACY_ASSETS_PATCH)) {
+                    try {
+                        e.delete();
+                        logger.d(" -Removed legacy patch entry " + name);
+                    } catch (IOException ex) {
+                        logger.e("Failed to delete legacy patch entry " + name + ": " + ex);
                     }
                 }
                 //收集已有的so架构
@@ -359,7 +447,7 @@ public class YTPPatch {
                 }
                 try (var is = ByteUtil.getResourceAsStream(entryName)) {
                     srcZFile.add(entryName, is, false);
-                } catch (Throwable e) {
+                } catch (Exception e) {
                     throw new PatchError("Error when adding native lib", e);
                 }
                 logger.d(" -Added " + entryName);
@@ -390,74 +478,103 @@ public class YTPPatch {
                 String targetName = generateUniqueDexFileName(srcZFile);
                 srcZFile.add(targetName, is);
                 logger.d(" -Added " + targetName);
-            } catch (Throwable e) {
+            } catch (Exception e) {
                 throw new PatchError("Error when adding dex", e);
             }
             logger.i("Process DexFile...");
             processDexFile(srcZFile);
             srcZFile.realign();
         } catch (Exception e) {
-            if (isOverlapFailure(e)) {
-                patchWithFallbacks(srcApkFile, Paths.get(outputFile).toFile());
-            } else {
-                throw new PatchError("Error when patching", e);
-            }
+            throw new PatchError("Error when patching", e);
         }
-        //只有数据复用优化的才会有PatchFile，不需要重命名为输出文件，在数据复用优化模式下，会保存在outputFile中
-        if(this.apk.getPatchFile().isEmpty()) {
-            var output = Paths.get(outputFile);
-            if (Files.exists(output) && !forceOverwrite) {
-                logger.i("Overwriting existing output " + outputFile);
-            }
-            // renameTo() reports nothing: on Windows it silently failed when the output already
-            // existed, so the previous - stale - apk was signed again and handed out as the
-            // fresh patch.
-            if (!srcApkFile.getAbsolutePath().equals(outputFile)) {
-                try {
-                    Files.move(srcApkFile.toPath(), output, StandardCopyOption.REPLACE_EXISTING);
-                } catch (IOException e) {
-                    throw new PatchError("Failed to move the patched apk to " + outputFile, e);
-                }
-            }
-            V2V3SchemeSigner.sign(Paths.get(outputFile).toFile(), new BksSignatureKey(keystoreArgs.get(0), keystoreArgs.get(1), keystoreArgs.get(2), keystoreArgs.get(3)), true, true);
-        }
-    }
-
-    private void patchWithFallbacks(File srcApkFile, File destApkFile) throws Exception {
-        new PatchFallbackPipeline(logger)
-                .add(
-                        "Standard patch failed, trying extend patch method",
-                        () -> new YTPExtend(logger, apk, args).patchExtend(srcApkFile, destApkFile),
-                        YTPPhantom::canHandleFallback)
-                .add(
-                        "Extend patch failed, trying Extend2 patch method",
-                        () -> new YTPPhantom(logger, apk, args).patchPhantom(srcApkFile, destApkFile))
-                .execute();
-    }
-
-    private boolean isOverlapFailure(Throwable error) {
-        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
-            if (cause.getMessage() != null && cause.getMessage().contains("overlaps with")) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
-     * Generate a unique dex file name that does not conflict with existing entries
-     *
-     * @param zFile The ZFile to check for existing entries
-     * @return A unique file name
+     * 对由调用方独占的临时 APK 直接执行标准修补，省去第二份整包工作副本。
+     * 失败时文件可能已被部分修改，调用方必须从原始容器恢复后再尝试回退。
      */
+    protected final void patchWorkspaceApk(File workFile) throws Exception {
+        patchStandard(workFile);
+    }
+
+    /**
+     * 选择普通修补或容器回退。所有策略都读取原始输入，普通策略成功时返回
+     * 未发布的候选文件；容器策略自行写入目标临时文件时返回 null。
+     */
+    private File patchWithFallbacks(File srcApkFile, File destApkFile) throws Exception {
+        // ZFile 会原地修改文件。先复制候选文件，让所有回退策略始终读取完整的原包。
+        File candidate = Files.createTempFile(destApkFile.getAbsoluteFile().getParentFile().toPath(),
+                "ytp-standard-", ".apk").toFile();
+        boolean keepCandidate = false;
+        try {
+            Files.copy(srcApkFile.toPath(), candidate.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            int successfulStrategy = new PatchFallbackPipeline(logger)
+                .add(
+                        "Parsing original apk...",
+                        () -> patchStandard(candidate),
+                        YTPExtend::canHandleFallback)
+                .add(
+                        "Standard patch failed, trying extend patch method",
+                        () -> runFallback(new YTPExtend(logger, apk, args),
+                                fallback -> fallback.patchExtend(srcApkFile, destApkFile)),
+                        error -> YTPBigFile.canHandleFallback(error) || YTPPhantom.canHandleFallback(error))
+                .addWhen(
+                        "Extend patch failed, trying big file patch method",
+                        () -> runFallback(new YTPBigFile(logger, apk, args),
+                                fallback -> fallback.patchBigFile(srcApkFile, destApkFile)),
+                        YTPBigFile::canHandleFallback,
+                        YTPPhantom::canHandleFallback)
+                .addWhen(
+                        "Extend patch failed, trying Extend2 patch method",
+                        () -> runFallback(new YTPPhantom(logger, apk, args),
+                                fallback -> fallback.patchPhantom(srcApkFile, destApkFile)),
+                        YTPPhantom::canHandleFallback)
+                .execute();
+            keepCandidate = successfulStrategy == 0;
+            return keepCandidate ? candidate : null;
+        } finally {
+            if (!keepCandidate) {
+                deleteTemporaryFile(candidate);
+            }
+        }
+    }
+
+    @FunctionalInterface
+    private interface FallbackAction<T extends YTPPatch> {
+        void run(T fallback) throws Exception;
+    }
+
+    /** 子策略继承发布状态，并在成功或失败后关闭自己的进度监控线程。 */
+    private <T extends YTPPatch> void runFallback(T fallback, FallbackAction<T> action) throws Exception {
+        fallback.deferOutputFinalization = deferOutputFinalization;
+        try {
+            action.run(fallback);
+        } finally {
+            fallback.monitorExecutor.shutdown();
+        }
+    }
+
+    /** 为新补丁寻找可用 DEX 名；更新补丁时复用序号最大的现有 DEX。 */
     protected String generateUniqueDexFileName(ZFile zFile) {
+        return chooseDexFileName(zFile, updatePatch);
+    }
+
+    /** 拆出无状态的命名规则，供不同修补策略复用和验证。 */
+    static String chooseDexFileName(ZFile zFile, boolean updatePatch) {
         int dexNum = 1;
-        String targetName;
-        do {
-            targetName = "classes" + (dexNum == 1 ? "" : dexNum) + ".dex";
+        while (zFile.get(dexFileName(dexNum)) != null) {
             dexNum++;
-        } while (zFile.get(targetName) != null);
-        return targetName;
+        }
+        if (!updatePatch || dexNum == 1) {
+            // 新补丁补齐首个空缺，兼容部分类加载器按连续序号查找多 DEX。
+            return dexFileName(dexNum);
+        }
+        int lastDex = 1;
+        for (StoredEntry entry : zFile.entries()) {
+            lastDex = Math.max(lastDex, dexOrdinal(entry.getCentralDirectoryHeader().getName()));
+        }
+        // 有序号空缺时不能简单使用 dexNum - 1，否则可能误覆盖主 DEX。
+        return dexFileName(lastDex);
     }
 
     /**
@@ -554,11 +671,12 @@ public class YTPPatch {
         }
     }
 
-    /**
-     * Embed modules into APK
-     *
-     * @param zFile Target ZFile object
-     */
+    /** DEX 文件名；序号 1 即 classes.dex。 */
+    private static String dexFileName(int number) {
+        return "classes" + (number == 1 ? "" : number) + ".dex";
+    }
+
+    /** 校验并嵌入模块 APK；空列表写入空目录标记。 */
     private void embedModules(ZFile zFile) {
         if(modules.isEmpty()) {
             try {
@@ -589,36 +707,27 @@ public class YTPPatch {
         }
     }
 
+    /**
+     * 合并外层容器提取出的条目。跳过旧签名和本项目的旧资源，
+     * 避免它们覆盖本次生成的文件；原生库、APK 和资源表保持未压缩。
+     */
     private void embedPatchFile(ZFile dstZFile){
         apk.getPatchFile().forEach((name, path) -> {
             if (name.startsWith("META-INF") && (name.endsWith(".SF") || name.endsWith(".MF") || name.endsWith(".RSA")))
                 return;
             if(name.startsWith("assets/"+LOWER_CASE_NAME+"/")) return;
             try (var patchIs = new FileInputStream(path)) {
-                if (name.endsWith(".so") || name.endsWith(".apk") || name.endsWith(".arsc")) {
-                    dstZFile.add(name, patchIs, false);
-                } else if (name.startsWith("classes") && name.endsWith(".dex")) {
-                    dstZFile.add(name, patchIs);
-                }
-                else {
-                    dstZFile.add(name, patchIs);
-                }
-            } catch (Throwable e) {
+                boolean store = name.endsWith(".so") || name.endsWith(".apk") || name.endsWith(".arsc");
+                dstZFile.add(name, patchIs, !store);
+            } catch (Exception e) {
                throw new PatchError("Error when adding patch file", e);
             }
         });
     }
 
     /**
-     * Modify manifest file
-     *
-     * @param is               Manifest file input stream
-     * @param config           Patch configuration
-     * @param permissions      Permissions list
-     * @param uses_permissions Used permissions list
-     * @param activity_names      activity_names list
-     * @return Modified manifest file as byte array
-     * @throws IOException IO exception
+     * 增补组件工厂、权限和模块入口。保留历史参数以兼容现有调用方。
+     * 输入流的关闭由调用方负责。
      */
     public byte[] modifyManifestFile(InputStream is, PatchConfig config, List<String> permissions, List<String> uses_permissions, List<String> activity_names) throws IOException {
         ModificationProperty property = new ModificationProperty();
@@ -664,21 +773,13 @@ public class YTPPatch {
 
         var os = new ByteArrayOutputStream();
         (new ManifestEditor(is, os, property)).processManifest();
-        is.close();
-        os.flush();
-        os.close();
         return os.toByteArray();
     }
 
-    /**
-     * Recursively delete directory and files
-     * Deletes the specified directory and all files and subdirectories it contains
-     *
-     * @param file File or directory to delete
-     */
+    /** 递归清理本次任务的工作目录；被占用的文件安排在进程退出时重试。 */
     protected void deleteRecursively(File file) {
         if (file.isDirectory()) {
-            // If it's a directory, recursively delete all subfiles and subdirectories first
+            // 先清理子项再删除目录；只处理本次创建的工作空间。
             File[] files = file.listFiles();
             if (files != null) {
                 for (File child : files) {
@@ -687,66 +788,90 @@ public class YTPPatch {
             }
         }
         if (!file.delete()) {
+            file.deleteOnExit();
             logger.e("Warning: Could not delete file/directory: " + file.getAbsolutePath());
         }
     }
 
+    /**
+     * 根据 Manifest 的组件工厂定位应替换父类的 DEX。
+     * 继承链可以跨多个 DEX，所以先逐个读取轻量类型关系；命中后仅重写目标 DEX。
+     * 若始终找不到工厂，则让 Manifest 直接使用代理工厂。
+     */
     public void processDexFile(ZFile destZFile) throws IOException {
-        if(updatePatch) return;
-        if(apk.getAppComponentFactory() == null || ANDROID_PROXY_FACTORIES.contains(apk.getAppComponentFactory())) {
+        if (updatePatch || apk.getAppComponentFactory() == null
+                || ANDROID_PROXY_FACTORIES.contains(apk.getAppComponentFactory())) {
             return;
         }
 
-        int dexCount = 1;
-        String targetName;
-        StoredEntry se;
         DexModifier dexModifier = new DexModifier(logger);
-        boolean modified = false;
+        // 继承链可能横跨多个 DEX，逐个收集轻量的类型关系；完整 DEX 字节只保留当前项。
+        Map<String, ClassDefInfo> classHierarchy = new HashMap<>();
         String newSuperSmali = "L" + PROXY_APP_PROXY_FACTORY.replace('.', '/') + ";";
-
-        while (true) {
-            targetName = "classes" + (dexCount == 1 ? "" : dexCount) + ".dex";
-            se = destZFile.get(targetName);
-            if (se == null) break;
-
-            long knownSize = se.getCentralDirectoryHeader().getUncompressedSize();
-
+        List<String> dexNames = new ArrayList<>();
+        for (StoredEntry entry : destZFile.entries()) {
+            String name = entry.getCentralDirectoryHeader().getName();
+            if (dexOrdinal(name) > 0) {
+                dexNames.add(name);
+            }
+        }
+        // 直接枚举条目，兼容 classes2.dex 缺失而 classes3.dex 存在的 APK。
+        dexNames.sort(Comparator.comparingInt(YTPPatch::dexOrdinal));
+        for (String dexName : dexNames) {
             try {
-                byte[] bytes;
-                try (InputStream is = se.open()) {
-                    bytes = ByteUtil.is2ByteArray(is, knownSize);
-                }
-
-                Map<String, ClassDefInfo> classNames = dexModifier.getAllClass(bytes, targetName);
-                logger.d(" -Find " + targetName + " class: " + classNames.size());
-                ClassDefInfo cls = DexModifier.getFinalClass(classNames, apk.getAppComponentFactory());
-                classNames = null;
-                System.gc();
-
+                byte[] bytes = readDexBytes(destZFile.get(dexName));
+                Map<String, ClassDefInfo> classNames = dexModifier.getAllClass(bytes, dexName);
+                // 同名类出现于多个 DEX 时保留先扫描的定义，与类加载器顺序一致。
+                classNames.forEach(classHierarchy::putIfAbsent);
+                logger.d(" -Find " + dexName + " class: " + classNames.size());
+                ClassDefInfo cls = DexModifier.getFinalClass(classHierarchy, apk.getAppComponentFactory());
                 if (cls != null) {
                     logger.d(" -Modifying " + cls.getDexName());
                     logger.d("  -Class: " + cls.getClassName());
                     logger.d("  -SuperClass: " + cls.getSuperClassName());
+                    // 目标父类可能位于较早读取的 DEX，此时只重读那一个条目。
+                    if (!cls.getDexName().equals(dexName)) {
+                        bytes = readDexBytes(destZFile.get(cls.getDexName()));
+                    }
                     R<InputStream> inputStreamR = dexModifier.modifySuperclass(
                             bytes, cls.getClassName(), newSuperSmali);
-                    bytes = null;
-                    System.gc();
-                    logger.d("  -Merge modified... ");
-                    destZFile.add(cls.getDexName(), inputStreamR.getData(), true);
-                    modified = true;
-                    break;
+                    try (InputStream modifiedDex = inputStreamR.getData()) {
+                        if (!inputStreamR.getCode()) {
+                            throw new IOException("DEX class was not modified: " + cls.getClassName());
+                        }
+                        logger.d("  -Merge modified... ");
+                        destZFile.add(cls.getDexName(), modifiedDex, true);
+                        return;
+                    }
                 }
             } catch (Exception e) {
-                System.gc();
-               throw new PatchError("Error when modify dex file", e);
+                throw new PatchError("Error when modifying DEX file", e);
             }
-            dexCount++;
         }
+        // 自定义工厂不在可访问的 DEX 中，改由 Manifest 指向默认代理，避免启动失败。
+        setManifestComponentFactory(destZFile);
+    }
 
-        System.gc();
-        if(!modified){
-            //logger.i(" -未在 dex 中找到 ComponentFactory: " + apk.getAppComponentFactory());
-            setManifestComponentFactory(destZFile);
+    private static byte[] readDexBytes(StoredEntry entry) throws IOException {
+        try (InputStream input = entry.open()) {
+            return ByteUtil.is2ByteArray(input, entry.getCentralDirectoryHeader().getUncompressedSize());
+        }
+    }
+
+    /** 只接受 Android 多 DEX 命名约定；返回序号用于保持扫描顺序。 */
+    private static int dexOrdinal(String name) {
+        if ("classes.dex".equals(name)) {
+            return 1;
+        }
+        if (!name.startsWith("classes") || !name.endsWith(".dex")) {
+            return -1;
+        }
+        String digits = name.substring("classes".length(), name.length() - ".dex".length());
+        try {
+            int ordinal = Integer.parseInt(digits);
+            return ordinal > 1 ? ordinal : -1;
+        } catch (NumberFormatException ignored) {
+            return -1;
         }
     }
 
@@ -754,6 +879,15 @@ public class YTPPatch {
         updatePatch = (srcZFile.get(LOADER_CORE_SO_PATH) != null || apk.getPatchFile().containsKey(LOADER_CORE_SO_PATH)
         || srcZFile.get("assets/ytp/loader.dex") != null || apk.getPatchFile().containsKey("assets/ytp/loader.dex")//TODO 以后会删除这行，兼容旧版本
         );
+        //这个 fork 改名成 YTP 之前打的补丁（HkPatch/HKP）用的是同一套框架，只是资源目录与 so 名
+        //不同，所以也按「更新已有补丁」处理：跳过 dex 改写，只把品牌资源换成新的。
+        for (String marker : LEGACY_PATCH_MARKERS) {
+            if (srcZFile.get(marker) != null || apk.getPatchFile().containsKey(marker)) {
+                updatePatch = true;
+                legacyPatch = true;
+                break;
+            }
+        }
         if(updatePatch){
             logger.i("Update patch: " + true);
         }
@@ -768,9 +902,6 @@ public class YTPPatch {
                 property.addApplicationAttribute(new AttributeItem("appComponentFactory", PROXY_APP_PROXY_FACTORY));
                 var os = new ByteArrayOutputStream();
                 (new ManifestEditor(is, os, property)).processManifest();
-                is.close();
-                os.flush();
-                os.close();
                 var manifest = os.toByteArray();
                 destZFile.add(ANDROID_MANIFEST_XML, new ByteArrayInputStream(manifest));
             } catch (IOException e) {

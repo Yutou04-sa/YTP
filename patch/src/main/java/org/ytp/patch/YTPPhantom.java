@@ -29,33 +29,23 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.zip.ZipException;
 
-import bin.mt.apksign.V2V3SchemeSigner;
-import bin.mt.apksign.key.BksSignatureKey;
 import bin.zip.DataMultiplexing;
 import bin.zip.ZipEntry;
 import bin.zip.ZipFile;
 
 /**
- * Patcher for APKs whose fallback extraction fails with an invalid ZIP-entry
- * CRC while containing an embedded original APK.
- *
- * <p>This path is intentionally separate from {@link YTPPatch} and
- * {@link YTPExtend}. Ordinary APKs keep their existing patch and extend logic.</p>
+ * 处理外层 ZIP 的 CRC 已失效、但仍可通过项目内 ZIP 读取器提取内嵌 APK 的容器。
  */
 public class YTPPhantom extends YTPPatch {
 
-    private File tempDir;
+    private PatchWorkspace workspace;
 
     public YTPPhantom(Logger logger, Apk apk, String... args) {
         super(logger, args);
         this.apk = apk;
     }
 
-    /**
-     * Returns whether the generic extend path failed in a way this strategy
-     * can recover from. Detection is based on the observed failure, not on a
-     * package-specific container entry name.
-     */
+    /** 只接管 CRC 校验失败或无法定位内嵌原包的回退错误。 */
     static boolean canHandleFallback(Throwable error) {
         for (Throwable cause = error; cause != null; cause = cause.getCause()) {
             String message = cause.getMessage();
@@ -77,42 +67,30 @@ public class YTPPhantom extends YTPPatch {
         return false;
     }
 
+    /**
+     * 为 CRC 异常容器创建独立工作区，重建并签名最终结果。
+     * 提取失败也会清理本次工作区，后续任务不会读到旧条目。
+     */
     public void patchPhantom(File srcApkFile, File destApkFile) throws Exception {
         logger.i("-----------------------------------");
         logger.i("Extend2 Parsing Starting");
 
-        File parent = destApkFile.getParentFile();
-        File[] tempFiles = parent.listFiles((dir, name) -> name.startsWith("temp_"));
-        if (tempFiles != null) {
-            for (File tempFile : tempFiles) {
-                deleteRecursively(tempFile);
-            }
-        }
-
-        tempDir = new File(parent, "temp_" + System.currentTimeMillis());
-        if (!tempDir.mkdirs()) {
-            throw new PatchError("Warning: Could not create temporary directory " + tempDir.getAbsolutePath());
-        }
-
-        logger.d("Temporary directories created:" + tempDir.getAbsolutePath());
+        workspace = PatchWorkspace.create(destApkFile, "ytp-phantom-");
+        logger.d("Temporary directory: " + workspace.directory());
+        apk.getPatchFile().clear();
         try {
             extractContainer(srcApkFile);
             rebuildApk(destApkFile, apk.getOriginalApkPatch());
         } finally {
-            if (tempDir.exists()) {
-                deleteRecursively(tempDir);
-            }
+            deleteRecursively(workspace.directory());
         }
     }
 
-    /**
-     * Extract using the project's random-access ZIP reader. It intentionally
-     * does not validate the stale CRC that caused the fallback failure.
-     */
+    /** 使用随机访问 ZIP 读取器提取条目，绕过标准流式读取器的旧 CRC 校验。 */
     private void extractContainer(File srcApkFile) throws IOException {
         logger.i("Analyse apk...");
         try (ZipFile zipFile = new ZipFile(srcApkFile)) {
-            byte[] buffer = new byte[8192];
+            byte[] buffer = new byte[64 * 1024];
             Map<String, String> packageNameAndOriginalApkPatch = new HashMap<>();
 
             for (ZipEntry entry : zipFile.getEntries()) {
@@ -120,16 +98,12 @@ public class YTPPhantom extends YTPPatch {
                     continue;
                 }
 
-                File outputFile = resolveEntryFile(entry.getName());
-                File parent = outputFile.getParentFile();
-                if (!parent.exists() && !parent.mkdirs()) {
-                    throw new PatchError("Warning: Could not create parent directory for " + outputFile.getAbsolutePath());
-                }
+                File outputFile = workspace.resolveEntry(entry.getName());
 
                 try (InputStream entryInputStream = zipFile.getInputStream(entry);
                      FileOutputStream output = new FileOutputStream(outputFile)) {
                     int length;
-                    while ((length = entryInputStream.read(buffer)) > 0) {
+                    while ((length = entryInputStream.read(buffer)) != -1) {
                         output.write(buffer, 0, length);
                     }
                 }
@@ -150,16 +124,7 @@ public class YTPPhantom extends YTPPatch {
         }
     }
 
-    private File resolveEntryFile(String entryName) throws IOException {
-        File root = tempDir.getCanonicalFile();
-        File outputFile = new File(root, entryName).getCanonicalFile();
-        String rootPath = root.getPath() + File.separator;
-        if (!outputFile.getPath().startsWith(rootPath)) {
-            throw new IOException("ZIP entry escapes extraction directory: " + entryName);
-        }
-        return outputFile;
-    }
-
+    /** 此类容器可能把原包伪装为 .dat，因此两种后缀都作为候选。 */
     private boolean isEmbeddedApkCandidate(String entryName) {
         return entryName.endsWith(".apk") || entryName.endsWith(".dat");
     }
@@ -186,30 +151,34 @@ public class YTPPhantom extends YTPPatch {
             throw new PatchError("EmbeddedApkPath cannot be null");
         }
 
-        File originalApk = new File(tempDir, originalApkPatch);
+        File originalApk = workspace.resolveEntry(originalApkPatch);
         if (!originalApk.exists()) {
             throw new PatchError("Embedded APK not found: " + originalApkPatch);
         }
 
-        File baseApk = destApkFile.getParentFile().toPath().resolve("base.apk").toFile();
+        // 此处必须保留未修补的原包：patchFile 中的 .dat 宿主仍要读取原始字节，
+        // 否则会把修补后的容器再次嵌入自身，导致数据重复甚至无限增长。
+        File baseApk = Files.createTempFile(workspace.directory().toPath(), "embedded-", ".apk").toFile();
         Files.copy(originalApk.toPath(), baseApk.toPath(), StandardCopyOption.REPLACE_EXISTING);
 
-        // The normal YTPPatch implementation remains unchanged. It receives
-        // the extracted container entries through Apk.patchFile.
-        patch(baseApk, apk);
+        // 修补内嵌 APK 是中间步骤，签名只在最终容器构建完成后进行。
+        patchIntermediateApk(baseApk);
 
-        // Only this special path needs .dat entries to remain STORED so the
-        // original APK can be used as DataMultiplexing's ZIP host.
+        // .dat 条目需保持 STORED，供数据复用器引用内嵌 APK 的原始数据。
         restoreStoredDatEntries(baseApk);
 
         logger.i("Optimize...");
         new DataMultiplexing(logger, super.monitorExecutor)
                 .optimize(baseApk, destApkFile, apk.getOriginalApkPatch(), false);
-        V2V3SchemeSigner.sign(destApkFile,
-                new BksSignatureKey(keystoreArgs.get(0), keystoreArgs.get(1),
-                        keystoreArgs.get(2), keystoreArgs.get(3)), true, true);
+        if (!deferOutputFinalization) {
+            signApk(destApkFile);
+        }
     }
 
+    /**
+     * 常规合并可能压缩 .dat，而复用器要求宿主条目为 STORED。
+     * 只重写这类条目，避免重新压缩其他数据。
+     */
     private void restoreStoredDatEntries(File baseApk) throws IOException {
         try (ZFile zFile = ZFile.openReadWrite(baseApk, Z_FILE_OPTIONS)) {
             for (Map.Entry<String, String> patchFile : apk.getPatchFile().entrySet()) {

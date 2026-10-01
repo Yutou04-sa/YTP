@@ -48,27 +48,25 @@ import org.jf.dexlib2.writer.pool.DexPool;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/** DEX 类型引用、字符串常量和继承关系的定向修改工具。 */
 public class DexModifier {
 
-    private Logger logger;
+    private final Logger logger;
 
-    final static public List<String> SELF_PROXY = List.of("L"+Constants.PROXY_APP_PROXY_FACTORY.replaceAll("\\.","/")+";");
+    public static final List<String> SELF_PROXY = List.of("L" + Constants.PROXY_APP_PROXY_FACTORY.replace('.', '/') + ";");
 
-    final static private List<String> INCLUDED_LIST = List.of(
-            //android
-            "Landroid/support/_ComponentFactory;"
-    );
+    private static final String FACTORY_SUFFIX = "ComponentFactory;";
 
-    final static private List<String> EXCLUSION_LIST = List.of(
-            //java
+    private static final List<String> EXCLUDED_PREFIXES = List.of(
+            // Java 和 Kotlin 标准库
             "Ljava/", "Ljavax/",
-            //kotlin
             "Lkotlin/", "Lkotlinx/",
-            // android
+            // Android 平台类
             "Landroid/support/",
             "Landroid/accessibilityservice/",
             "Landroid/accounts/",
@@ -90,7 +88,7 @@ public class DexModifier {
             "Landroid/widget/",
             "Lcom/android/tools/",
             "Lcom/android/annotation/",
-            //androidx
+            // AndroidX 通用库类
             "Landroidx/activity/",
             "Landroidx/annotation/",
             "Landroidx/appcompat/",
@@ -141,28 +139,28 @@ public class DexModifier {
             "Landroidx/viewpager2/",
             "Landroidx/webkit/",
             "Landroidx/work/",
-            //other
+            // 其他常见第三方库类
             "Ldalvik/","Lcom/google/gson/","Lcom/google/guava/","Lorg/apache/","Lorg/jetbrains/","Lorg/gradle/","Lio/netty/","Lorg/xml/", "Lorg/w3c/");
 
     public DexModifier(){
+        this(null);
     }
 
     public DexModifier(Logger logger){
         this.logger = logger;
     }
 
+    /**
+     * 只替换指定类的父类描述符；找不到该类时返回原始字节并标记为未修改。
+     * 完整 DEX 会在最后统一重写一次，避免逐类重建造成重复工作。
+     */
     public R<InputStream> modifySuperclass(byte[] dexData, String className, String newSuperclassName) throws IOException {
-        R<byte[]> r = modifySuperclass2ByteArray(dexData, className, newSuperclassName);
-        if(r.getCode()){
-            return new R<>(true, new ByteArrayInputStream(r.getData()));
-        }
-        return new R<>(false, new ByteArrayInputStream(r.getData()));
+        R<byte[]> result = modifySuperclass2ByteArray(dexData, className, newSuperclassName);
+        return new R<>(result.getCode(), new ByteArrayInputStream(result.getData()));
     }
 
     /**
-     * Renames one Java package in a DEX file and rewrites all type references that point into it.
-     * String constants containing the old package are rewritten as well because Android libraries
-     * commonly keep generated class names in error messages or reflection code.
+     * 重命名 DEX 中的包及其类型引用，并同步处理反射或错误信息里的完整包名字符串。
      */
     public byte[] renamePackage(byte[] dexData, String oldPackageName, String newPackageName) throws IOException {
         if (oldPackageName == null || newPackageName == null || oldPackageName.isEmpty()
@@ -251,7 +249,7 @@ public class DexModifier {
             }
         }
         for (StringReference reference : dexFile.getStringReferences()) {
-            if (reference.getString().contains(packageName)) {
+            if (!rewritePackageInString(reference.getString(), packageName, "").equals(reference.getString())) {
                 return true;
             }
         }
@@ -259,7 +257,32 @@ public class DexModifier {
     }
 
     private static String rewritePackageInString(String value, String oldPackageName, String newPackageName) {
-        return value.replace(oldPackageName, newPackageName);
+        int searchFrom = 0;
+        int copiedThrough = 0;
+        StringBuilder rewritten = null;
+        while (true) {
+            int index = value.indexOf(oldPackageName, searchFrom);
+            if (index < 0) {
+                break;
+            }
+            int end = index + oldPackageName.length();
+            boolean leftBoundary = index == 0 || !isPackageCharacter(value.charAt(index - 1));
+            boolean rightBoundary = end == value.length() || !isPackageCharacter(value.charAt(end))
+                    || value.charAt(end) == '.';
+            if (leftBoundary && rightBoundary) {
+                if (rewritten == null) {
+                    rewritten = new StringBuilder(value.length());
+                }
+                rewritten.append(value, copiedThrough, index).append(newPackageName);
+                copiedThrough = end;
+            }
+            searchFrom = end;
+        }
+        return rewritten == null ? value : rewritten.append(value, copiedThrough, value.length()).toString();
+    }
+
+    private static boolean isPackageCharacter(char value) {
+        return Character.isJavaIdentifierPart(value) || value == '.';
     }
 
     private static Instruction replaceStringReference(Instruction instruction, StringReference reference) {
@@ -293,29 +316,34 @@ public class DexModifier {
         }
     }
 
+    /**
+     * 从 Manifest 中声明的工厂沿父类链查找，返回直接继承系统组件工厂的应用类。
+     * classDefMap 可汇总多个 DEX；缺失父类或循环继承会安全终止。
+     */
     public static ClassDefInfo getFinalClass(Map<String, ClassDefInfo> classDefMap, String startClassName){
-        // Process inheritance chain starting from startClassName
-        startClassName = "L"+startClassName.replaceAll("\\.","/")+";";
-        String currentClassName = startClassName;
+        // 异常 DEX 可能含有循环继承关系，已访问集合保证查找能够终止。
+        String currentClassName = startClassName.startsWith("L") && startClassName.endsWith(";")
+                ? startClassName : "L" + startClassName.replace('.', '/') + ";";
         ClassDefInfo targetClassDefInfo = null;
-        while (currentClassName != null) {
+        Set<String> visited = new HashSet<>();
+        while (currentClassName != null && visited.add(currentClassName)) {
             ClassDefInfo currentClassDef = classDefMap.get(currentClassName);
             if (currentClassDef == null) {
-                // Class not found in this DEX file, stop traversing
+                // 已扫描的 DEX 都没有该父类时停止；调用方可在扫描下一 DEX 后重试。
                 break;
             }
             
-            // Check if this class meets the basic conditions
+            // 只修改直接继承 Android 组件工厂的应用类。
             if (ANDROID_PROXY_FACTORIES_SMAIL.contains(currentClassDef.getSuperClassName())  &&
                     !ANDROID_PROXY_FACTORIES_SMAIL.contains(currentClassDef.getClassName()) &&
                     !SELF_PROXY.contains(currentClassDef.getClassName())) {
                 targetClassDefInfo = currentClassDef;
             }
 
-            // Move to the superclass
+            // 沿继承链继续向上查找。
             currentClassName = currentClassDef.getSuperClassName();
 
-            // If we've reached a superclass that is in our target lists, stop traversing
+            // 到达系统组件工厂后无需继续查找。
             if (ANDROID_PROXY_FACTORIES_SMAIL.contains(currentClassName)) {
                 break;
             }
@@ -324,68 +352,83 @@ public class DexModifier {
         return targetClassDefInfo;
     }
 
-    public Map<String, ClassDefInfo>  getAllClass(byte[] dexData, String dexName) throws IOException {
+    /**
+     * 只抽取继承关系和所属 DEX，不保留方法体；跨 DEX 查找时可降低常驻内存。
+     * 普通库类按描述符前缀过滤，但组件工厂类始终保留；应用类即使继承库类
+     * 也必须纳入映射，否则跨 DEX 的继承链会被截断。
+     */
+    public Map<String, ClassDefInfo> getAllClass(byte[] dexData, String dexName) throws IOException {
         Opcodes opcodes = Opcodes.forApi(35);
         DexBackedDexFile dexFile = new DexBackedDexFile(opcodes, dexData);
-       Map<String, ClassDefInfo> classDefMap = new java.util.HashMap<>();
+        Map<String, ClassDefInfo> classDefMap = new java.util.HashMap<>();
         for (ClassDef def : dexFile.getClasses()) {
-            if(def.getSuperclass()!=null && (
-                    EXCLUSION_LIST.stream().noneMatch(exclusion -> def.getType().contains(exclusion) || def.getSuperclass().contains(exclusion)))
-                    || INCLUDED_LIST.stream().anyMatch(included -> (def.getType().startsWith(included.split("_")[0]) && def.getType().endsWith(included.split("_")[1])))
-            ){
-                classDefMap.put(def.getType(), new ClassDefInfo(def.getType(), def.getSuperclass(), dexName));
+            String superclass = def.getSuperclass();
+            if (superclass == null) {
+                continue;
+            }
+            String type = def.getType();
+            if (!isExcluded(type) || type.endsWith(FACTORY_SUFFIX)) {
+                classDefMap.put(type, new ClassDefInfo(type, superclass, dexName));
             }
         }
         return classDefMap;
     }
 
+    /** 只按类型前缀排除平台和常见库类，避免误删名称中碰巧包含相同片段的应用类。 */
+    private static boolean isExcluded(String type) {
+        for (String prefix : EXCLUDED_PREFIXES) {
+            if (type.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     /**
-     * Modifies the superclass of a specific class in a DEX file
-     *
-     * @param dexData The original DEX file data
-     * @param className The class to modify (fully qualified name)
-     * @param newSuperclassName The new superclass (fully qualified name)
-     * @return The modified DEX file data
-     * @throws IOException If there's an error processing the DEX file
+     * 构建新 DEX 时只包装目标类，并让包装类返回新的父类描述符。
+     * 其他类仍使用原始定义，保持字段、方法、注解等内容。
      */
-    private  R<byte[]> modifySuperclass2ByteArray(byte[] dexData, String className, String newSuperclassName) throws IOException {
+    private R<byte[]> modifySuperclass2ByteArray(byte[] dexData, String className, String newSuperclassName) throws IOException {
         Opcodes opcodes = Opcodes.forApi(35);
         boolean modified = false;
-       // String smailClassName = "L" + className.replace(".", "/") + ";";
-        // Load the DEX file
+        // 先解析原始 DEX，再通过 DexPool 生成有效索引和校验信息。
         DexBackedDexFile dexFile = new DexBackedDexFile(opcodes, dexData);
 
-        // Create a new DEX pool for writing
         DexPool dexPool = new DexPool(opcodes);
 
-        // Process all classes in the DEX file
         int size = dexFile.getClasses().size();
         int num = 1;
+        // 管理端会把进度日志同步到 UI；每个类都上报会让大型 DEX 的界面更新成为瓶颈。
+        int progressStep = Math.max(1, size / 100);
         for (ClassDef classDef : dexFile.getClasses()) {
-            // Check if this is the class we want to modify
             if (classDef.getType().equals(className)) {
-                // Create a modified class definition with new superclass
                 ModifiedClassDef modifiedClassDef = new ModifiedClassDef(classDef, newSuperclassName);
                 dexPool.internClass(modifiedClassDef);
+                modified = true;
             }
             else {
                 dexPool.internClass(classDef);
             }
-            logger.d(LOG_PROCESS+"  -Modified: "+ num +"/" + size );
+            if (logger != null && logger.verbose && (num == size || num % progressStep == 0)) {
+                logger.d(LOG_PROCESS + "  -Modified: " + num + "/" + size);
+            }
             num++;
         }
-        logger.d("  -Generate dex... ");
-        // Write the modified DEX to memory
+        if (!modified) {
+            // 未命中时直接返回原始字节，避免无意义的重写并让调用方识别结果。
+            return new R<>(false, dexData);
+        }
+        if (logger != null) {
+            logger.d("  -Generate dex... ");
+        }
+        // 只在命中目标后写出 DEX；未命中路径直接复用传入字节。
         MemoryDataStore dataStore = new MemoryDataStore();
         dexPool.writeTo(dataStore);
-        // Return the modified DEX data
         return new R<>(modified, dataStore.getData());
     }
 
-    /**
-     * Helper class to modify the superclass of a class definition
-     */
+    /** 透传原始类的所有成员和元数据，仅重写 getSuperclass()。 */
     private static class ModifiedClassDef implements ClassDef {
         private final ClassDef originalClassDef;
         private final String newSuperclassName;

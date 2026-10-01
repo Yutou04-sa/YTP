@@ -10,19 +10,31 @@
 package org.ytp.patch.util;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
+import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
+/** 修补资源及 DEX 字节流的读取工具。调用方负责关闭传入的流。 */
 public class ByteUtil {
+    /** 未知长度时使用固定块读取，避免逐字节读取带来的 I/O 开销。 */
     public static byte[] is2ByteArray(InputStream inputStream) throws IOException {
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream(64 * 1024);
         int nRead;
-        byte[] data = new byte[1024];
+        byte[] data = new byte[64 * 1024];
         while ((nRead = inputStream.read(data, 0, data.length)) != -1) {
-            buffer.write(data, 0, nRead);
+            if (nRead == 0) {
+                int next = inputStream.read();
+                if (next == -1) {
+                    break;
+                }
+                buffer.write(next);
+            } else {
+                buffer.write(data, 0, nRead);
+            }
         }
         return buffer.toByteArray();
     }
@@ -38,7 +50,10 @@ public class ByteUtil {
      * @throws IOException 如果发生 I/O 错误
      */
     public static byte[] is2ByteArray(InputStream inputStream, long knownSize) throws IOException {
-        if (knownSize <= 0 || knownSize > Integer.MAX_VALUE) {
+        if (knownSize > Integer.MAX_VALUE) {
+            throw new IOException("DEX data exceeds Java array limit: " + knownSize);
+        }
+        if (knownSize <= 0) {
             return is2ByteArray(inputStream);
         }
         byte[] data = new byte[(int) knownSize];
@@ -46,48 +61,57 @@ public class ByteUtil {
         int remaining = data.length;
         int nRead;
         while (remaining > 0 && (nRead = inputStream.read(data, offset, remaining)) != -1) {
+            if (nRead == 0) {
+                int next = inputStream.read();
+                if (next == -1) {
+                    break;
+                }
+                data[offset++] = (byte) next;
+                remaining--;
+                continue;
+            }
             offset += nRead;
             remaining -= nRead;
+        }
+        if (remaining != 0) {
+            throw new EOFException("Input ended before the expected " + knownSize + " bytes were read");
+        }
+        if (inputStream.read() != -1) {
+            throw new IOException("Input contains more than the expected " + knownSize + " bytes");
         }
         return data;
     }
 
     /**
-     * Open a build-time resource (loader dex / core.so / lib*.so / config templates).
+     * 按顺序从 classpath、指定资源目录和项目构建输出目录加载资源。
+     * 使用 ytp.assets.dir 系统属性可为命令行指定自定义资源根目录。
      *
-     * The assets are packed under the "assets/" entry prefix, because on Android the Apk's entries
-     * are resolved straight through the class loader. A source checkout keeps the same files in a
-     * directory instead (out/assets/release/&lt;name&gt;), optionally relocated with
-     * -Dytp.assets.dir=&lt;dir&gt; or the YTP_ASSETS_DIR environment variable.
-     *
-     * @param path Resource path, e.g. "assets/ytp/core.so"
-     * @return InputStream of the resource
-     * @throws FileNotFoundException if the resource is neither on disk nor on the classpath
+     * @param path 资源路径
+     * @return 资源输入流，调用方负责关闭
+     * @throws FileNotFoundException 找不到或无法打开资源时抛出
      */
     public static InputStream getResourceAsStream(String path) throws FileNotFoundException {
-        String dir = System.getProperty("ytp.assets.dir");
-        if (dir == null || dir.isEmpty()) {
-            dir = System.getenv("YTP_ASSETS_DIR");
+        InputStream resource = ByteUtil.class.getClassLoader().getResourceAsStream(path);
+        if (resource != null) {
+            return resource;
         }
-        if (dir == null || dir.isEmpty()) {
-            dir = new File("out", "assets/release").getAbsolutePath();
-        }
-        String relative = path.startsWith(ASSET_ENTRY_PREFIX) ? path.substring(ASSET_ENTRY_PREFIX.length()) : path;
-        File local = new File(dir, relative);
-        if (!local.isFile()) {
-            File alt = new File(dir, path);
-            if (alt.isFile()) {
-                local = alt;
+        String relativePath = path.startsWith("assets/") ? path.substring("assets/".length()) : path;
+        String configuredRoot = System.getProperty("ytp.assets.dir");
+        Path[] candidates = configuredRoot == null || configuredRoot.trim().isEmpty()
+                ? new Path[] {Paths.get(path), Paths.get("out", "assets", "release", relativePath)}
+                : new Path[] {Paths.get(configuredRoot, relativePath), Paths.get(path)};
+        for (Path candidate : candidates) {
+            if (Files.isRegularFile(candidate)) {
+                try {
+                    return Files.newInputStream(candidate);
+                } catch (IOException e) {
+                    FileNotFoundException failure = new FileNotFoundException("Cannot open patch resource: " + candidate);
+                    failure.initCause(e);
+                    throw failure;
+                }
             }
         }
-        if (local.isFile()) {
-            return new FileInputStream(local);
-        }
-        InputStream fromClasspath = ByteUtil.class.getClassLoader().getResourceAsStream(path);
-        if (fromClasspath != null) {
-            return fromClasspath;
-        }
-        throw new FileNotFoundException(path + " (not in " + dir + ", not on the classpath)");
+        throw new FileNotFoundException("Patch resource not found: " + path);
     }
 
     /**
@@ -106,6 +130,4 @@ public class ByteUtil {
             return false;
         }
     }
-
-    private static final String ASSET_ENTRY_PREFIX = "assets/";
 }

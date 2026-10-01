@@ -109,7 +109,8 @@ public class ZipMaker implements Closeable {
         return comment;
     }
 
-    private final byte[] copyEntryBuffer = new byte[8 * 1024];
+    /** 原始 ZIP 数据直接复制，固定缓冲区可同时控制内存和系统调用次数。 */
+    private final byte[] copyEntryBuffer = new byte[128 * 1024];
 
     public void putNextEntry(String name) throws IOException {
         putNextEntry(new CenterFileHeader(name));
@@ -186,11 +187,13 @@ public class ZipMaker implements Closeable {
     public void copyZipEntry(ZipEntry ze, ZipFile zipFile) throws IOException {
         putNextRawEntry(ze);
         if (!ze.isDirectory()) {
-            InputStream is = zipFile.getRawInputStream(ze);
-            byte[] buffer = copyEntryBuffer;
-            int len;
-            while ((len = is.read(buffer)) != -1) {
-                writeRaw(buffer, 0, len);
+            // 每个原始流都在复制后关闭，兼容底层可能持有文件句柄的实现。
+            try (InputStream is = zipFile.getRawInputStream(ze)) {
+                byte[] buffer = copyEntryBuffer;
+                int len;
+                while ((len = is.read(buffer)) != -1) {
+                    writeRaw(buffer, 0, len);
+                }
             }
         }
     }
@@ -325,9 +328,9 @@ public class ZipMaker implements Closeable {
 
     public void writeFully(InputStream is) throws IOException {
         int len;
-        byte[] b = new byte[1024 * 4];
-        while ((len = is.read(b)) > 0)
-            write(b, 0, len);
+        while ((len = is.read(copyEntryBuffer)) != -1) {
+            write(copyEntryBuffer, 0, len);
+        }
     }
 
     public void closeEntry() throws IOException {
