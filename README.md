@@ -59,14 +59,21 @@
   分隔）—— 原生构建耗时随 ABI 数量增长。
 
   GitHub Actions（`.github/workflows/android.yml`）会在每次 push 时构建同样的 release APK，并在
-  推送 `v*` 标签时把 APK 附到以标签为版本号的 Release 上（`git tag v1.0 && git push <你的远端> v1.0`）；
-  标签必须与 `gradle/version.properties` 中的 `verName` 一致。若仓库配置了
+  推送 `v*` 标签时把 APK 附到以标签为版本号的 Release 上（`git tag v2.2.0 && git push <你的远端> v2.2.0`）；
+  标签只是发布标识，可以和 `gradle/version.properties` 里的 `verName` 不一致（不一致时工作流只给出
+  警告，并把包内实际版本号写进 Release 说明）。若仓库配置了
   `SIGNING_KEYSTORE_BASE64`、`SIGNING_STORE_PASSWORD`、`SIGNING_KEY_PASSWORD` 三个 secret，工作流
   会为 APK 签名；fork 之后没有这些 secret 也能正常构建并发布未签名 APK。把 `SIGNING_CERT_SHA256`
   设为你的签名证书 SHA-256（即 `apksigner verify --print-certs` 输出里的 `certificate SHA-256
   digest` 那一行 —— build-tools 37 会写成 `V3.0 Signer: certificate SHA-256 digest: …`；小写
   十六进制、不含冒号），一旦签名密钥不符，构建会直接失败而不是发布一个被别人签名的 APK ——
   `apksigner verify --print-certs out/release/YTP-*.apk` 可查看当前包的实际摘要。
+
+  发布的 APK 还会带上 `manager/sounds/` 里那批**内置提示音素材**：这些素材不在本仓库里（见下文与
+  `.gitignore`），而是存在私有仓库 `Yutou04-sa/YTP-sounds`。工作流用一把**只读部署密钥**（secret
+  `SOUNDS_DEPLOY_KEY`，内容是那把密钥的私钥）把素材取回来参与构建，于是「发布的 APK 带素材、源码
+  仓库里一个音频文件都没有」。没有配置这个 secret（例如别人 fork 之后）时只给出警告并跳过，构建
+  照常完成，只是 APK 里没有这批内置素材。
 
 ## 本仓库的改动
 
@@ -92,7 +99,10 @@
 + 修补开始与修补完成时可以各播一声**提示音**（默认开启，可在设置页关掉）。**提示音库**页可以
   试听并挑选音源，也能通过系统文件选择器添加自己**截取**的音频片段（选起止时间），内置提示音
   可以逐条删除并随时恢复。仓库里只带两个极短的自制 wav（`manager/src/main/res/raw/`）；额外的
-  音效素材放在 `manager/sounds/`，该目录被 `.gitignore` 排除，只在本机构建时打进 APK。
+  音效素材放在 `manager/sounds/`，该目录被 `.gitignore` 排除：它们是从第三方音源（表情包、语音包
+  一类）收集来的，版权不在本项目的 GPL-3.0 授权覆盖范围内，所以**不随源码发布**，只存在私有仓库
+  `Yutou04-sa/YTP-sounds`。本地构建时把这个目录放好即可打进 APK；发布构建则由工作流用只读部署密钥
+  取回素材（见上文），于是发布出来的 APK 里带这些内置音效，而源码仓库里没有任何音频文件。
 + 列表在每次页面恢复（resume）时自动刷新，因此没有刷新按钮。
 + 多 APK（split）应用通过同一个 `PackageInstaller` 会话安装，不会再出现只装上一部分的情况。
 + 模块仓库入口放在底部导航栏；原先的“工具和资源”分组（含随机包名功能）已移除。

@@ -95,6 +95,47 @@ jobs:
           EOF
           ls -l manager/signing
 
+      - name: 取回提示音素材
+        # 内置提示音素材是从第三方音源收集的，不放在公开源码仓库里（.gitignore 排除了
+        # manager/sounds/），而是存在私有仓库 Yutou04-sa/YTP-sounds，只给发布构建用。
+        # 这里用一把只读部署密钥取回来，于是「发布的 APK 带素材、源码仓库里没有音频」。
+        # 没配置 SOUNDS_DEPLOY_KEY（例如别人 fork 之后）就只是警告并跳过，构建照常完成，
+        # 只是提示音库里没有那些内置素材。
+        env:
+          SOUNDS_DEPLOY_KEY: ${{ secrets.SOUNDS_DEPLOY_KEY }}
+          SOUNDS_REPO: Yutou04-sa/YTP-sounds
+        run: |
+          set -euo pipefail
+          if [ -z "$SOUNDS_DEPLOY_KEY" ]; then
+            echo "::warning::SOUNDS_DEPLOY_KEY is not set; building without the bundled prompt sounds"
+            exit 0
+          fi
+          key="$HOME/.ssh/sounds_deploy_key"
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SOUNDS_DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          for attempt in 1 2 3; do
+            if git clone --depth 1 "git@github.com:${SOUNDS_REPO}.git" "$RUNNER_TEMP/ytp-sounds"; then
+              break
+            fi
+            rm -rf "$RUNNER_TEMP/ytp-sounds"
+            # 有些网络封了 22 端口，GitHub 的备用 SSH 入口是 ssh.github.com:443。
+            if git clone --depth 1 "ssh://git@ssh.github.com:443/${SOUNDS_REPO}.git" "$RUNNER_TEMP/ytp-sounds"; then
+              break
+            fi
+            rm -rf "$RUNNER_TEMP/ytp-sounds"
+            if [ "$attempt" = 3 ]; then
+              echo "::error::could not fetch the prompt sound assets from ${SOUNDS_REPO} (tried ssh port 22 and 443)"
+              exit 1
+            fi
+            sleep 5
+          done
+          # 私有仓库根目录下就是 manager/sounds 的内容（ytp-sounds/<分组>/*.mp3）。
+          mkdir -p manager/sounds
+          cp -R "$RUNNER_TEMP/ytp-sounds/ytp-sounds" manager/sounds/
+          echo "bundled prompt sound files: $(find manager/sounds -type f | wc -l)"
+
       - name: 构建 release APK
         run: ./gradlew :manager:buildRelease --console=plain --stacktrace
 
@@ -181,5 +222,7 @@ jobs:
 
           发布 tag：${TAG}；APK 内版本号：verName=${fileVer}（versionCode 见 gradle/version.properties）。
 
-          源码地址：${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} —— YTP 是 LSPatch 的二次修改版本（经由 HKP / HkPatch）：框架核心来自 LSPosed，免 Root 打补丁的思路来自 LSPatch / Xpatch，整体以 GPL-3.0 授权；第三方组件声明见仓库中的 NOTICE。" \
+          源码地址：${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} —— YTP 是 LSPatch 的二次修改版本（经由 HKP / HkPatch）：框架核心来自 LSPosed，免 Root 打补丁的思路来自 LSPatch / Xpatch，整体以 GPL-3.0 授权；第三方组件声明见仓库中的 NOTICE。
+
+          这个 APK 里还打包了「修补提示音」用的内置音效素材：它们来自第三方音源，只随 APK 分发，不存在于源码仓库中（已被 .gitignore 排除），也不属于本项目 GPL-3.0 授权覆盖的源码部分。" \
             out/release/*.apk out/release/SHA256SUMS.txt
