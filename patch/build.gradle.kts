@@ -26,4 +26,7 @@ dependencies {
     implementation(lspatch.dexlib2)
     implementation(lspatch.apkzlib)
     api(lspatch.guava)
+
+    // 单元测试：沿用上游 patch 模块的 JUnit 4 写法，用 `gradlew :patch:test` 跑。
+    testImplementation("junit:junit:4.13.2")
 }
