@@ -469,6 +469,38 @@ object PatchSoundLibrary {
         runCatching { staged.file.delete() }
     }
 
+    /**
+     * 清掉 custom 目录里没有任何条目引用的残留文件。
+     *
+     * 会留下孤儿文件的场景：选文件复制到一半失败、复制完但进程被杀（截取对话框没来得及确认或放弃）。
+     * 判定依据只认 [Configs.customPatchSounds] 里记着的 path，配置读不出来时宁可不动手。
+     */
+    @Synchronized
+    fun cleanOrphans(): Int {
+        val dir = customDir()
+        if (!dir.isDirectory) return 0
+        val text = Configs.customPatchSounds
+        val referenced = HashSet<String>()
+        if (text.isNotBlank()) {
+            val array = runCatching { JSONArray(text) }.getOrNull() ?: return 0
+            for (index in 0 until array.length()) {
+                val path = array.optJSONObject(index)?.optString("path").orEmpty()
+                if (path.isNotEmpty()) referenced.add(File(path).absolutePath)
+            }
+        }
+        var removed = 0
+        dir.listFiles().orEmpty()
+            .filter { it.isFile && it.absolutePath !in referenced }
+            .forEach { file ->
+                if (runCatching { file.delete() }.getOrDefault(false)) {
+                    durationCache.remove(file.absolutePath)
+                    removed++
+                }
+            }
+        if (removed > 0) Log.i(TAG, "Removed $removed orphan prompt sound file(s)")
+        return removed
+    }
+
     private fun extensionOf(source: Uri): String {
         val extension = displayNameOf(source)?.substringAfterLast('.', "")?.lowercase().orEmpty()
         return if (extension.length in 1..5 && extension.all { it.isLetterOrDigit() }) extension else "mp3"

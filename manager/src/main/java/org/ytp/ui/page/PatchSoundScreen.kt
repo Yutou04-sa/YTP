@@ -132,7 +132,11 @@ fun PatchSoundScreen(navigator: DestinationsNavigator) {
     // 提示音库要列文件、读时长，放 IO 线程；refreshKey 变了（增删/恢复）就重列一遍
     LaunchedEffect(refreshKey) {
         loading = true
-        sounds = withContext(Dispatchers.IO) { PatchSoundLibrary.allSounds() }
+        sounds = withContext(Dispatchers.IO) {
+            // 顺带清掉自定义目录里没有被任何条目引用的残留（选文件失败、复制到一半被杀会留下）
+            PatchSoundLibrary.cleanOrphans()
+            PatchSoundLibrary.allSounds()
+        }
         loading = false
     }
 
