@@ -74,6 +74,12 @@ android {
         }
         all {
             sourceSets[name].assets.srcDirs(rootProject.projectDir.resolve("out/assets/$name"))
+            // 修补提示音的素材不进仓库（见 .gitignore）：本地存在才当资源目录，
+            // 缺了也不影响构建，只是提示音库里没有这些内置素材。
+            val localSounds = project.projectDir.resolve("sounds")
+            if (localSounds.isDirectory) {
+                sourceSets[name].assets.srcDir(localSounds)
+            }
         }
     }
 

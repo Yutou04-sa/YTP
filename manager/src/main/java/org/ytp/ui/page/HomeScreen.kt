@@ -92,11 +92,12 @@ import kotlinx.coroutines.launch
 import org.ytp.R
 import org.ytp.config.Configs
 import org.ytp.share.YTPConfig
-import org.ytp.ui.component.AppFab
+import org.ytp.ui.component.NewPatchEntry
 import org.ytp.ui.theme.YtpColors
 import org.ytp.ui.page.destinations.ModuleManagerScreenDestination
 import org.ytp.ui.page.destinations.NewPatchScreenDestination
 import org.ytp.ui.page.destinations.PatchedAppsScreenDestination
+import org.ytp.ui.util.AppListPermissionGate
 import org.ytp.ui.util.LocalSnackbarHost
 import java.io.IOException
 
@@ -149,8 +150,7 @@ fun HomeScreen(navigator: DestinationsNavigator) {
     }
 
     Scaffold(
-        containerColor = YtpPageBg,
-        floatingActionButton = { AppFab(navigator) }
+        containerColor = YtpPageBg
     ) { innerPadding ->
         // 首页改为固定顺序的纵向流式排布：内容始终可滚动，
         // 不再按视口高度加权分配空间，避免设备信息在小屏或大屏上被裁掉。
@@ -163,16 +163,26 @@ fun HomeScreen(navigator: DestinationsNavigator) {
                     start = 16.dp,
                     top = 8.dp,
                     end = 16.dp,
-                    bottom = 88.dp
+                    // 最后一个入口不再需要为右下角的悬浮按钮让位（底部导航的让位由
+                    // MainActivity 的 Scaffold 负责），这里只留一点收尾间距。
+                    bottom = 24.dp
                 ),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             RuntimeHero()
             DeviceSnapshot()
-            ManagementActions(
-                onOpenModules = { navigator.navigate(ModuleManagerScreenDestination) },
-                onOpenPatchedApps = { navigator.navigate(PatchedAppsScreenDestination) }
-            )
+            // 「模块 / 应用」都要先能读到已安装应用列表才不是空的，所以进页面前先过一道权限闸门。
+            AppListPermissionGate { request ->
+                ManagementActions(
+                    navigator = navigator,
+                    onOpenModules = {
+                        request { navigator.navigate(ModuleManagerScreenDestination) }
+                    },
+                    onOpenPatchedApps = {
+                        request { navigator.navigate(PatchedAppsScreenDestination) }
+                    }
+                )
+            }
             CommunityAction()
         }
     }
@@ -811,16 +821,19 @@ private fun CommunityAction() {
 
 @Composable
 private fun ManagementActions(
+    navigator: DestinationsNavigator,
     onOpenModules: () -> Unit,
     onOpenPatchedApps: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // NP 风格的入口列表：整行卡片（图标盒 + 名称 + 箭头），纵向排列；
-    // 补丁入口仍走右下角的悬浮按钮（Scaffold 的 floatingActionButton）。
+    // 新建修补也做成同样的一行放在最前面（原来走右下角的悬浮按钮）。
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        NewPatchEntry(navigator = navigator)
+
         ManagementEntry(
             icon = Icons.Outlined.Extension,
             title = stringResource(R.string.home_modules),

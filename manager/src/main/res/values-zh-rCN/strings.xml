@@ -52,6 +52,11 @@
     <string name="patch_return">返回</string>
     <string name="patch_install_successfully">安装成功</string>
     <string name="patch_install_failed">安装失败</string>
+    <string name="patch_install_checking">正在检查已安装的应用…</string>
+    <string name="patch_install_installing">正在安装…</string>
+    <string name="patch_install_conflict_title">签名不一致</string>
+    <string name="patch_install_conflict_message">设备上已安装同名应用 %1$s，但签名与本包不一致，无法直接覆盖安装。强制安装会先卸载它，该应用的数据会丢失。</string>
+    <string name="patch_install_force">强制安装</string>
     <string name="patch_no_xposed_module">非 Xposed 模块</string>
     <string name="patch_status_patching">正在修补</string>
     <!-- Select Apps Screen -->
@@ -89,6 +94,14 @@
     <string name="settings_group_other">其他</string>
     <string name="settings_group_other_hint">了解更多</string>
     <string name="settings_detail_patch_logs_description">记录修补过程的详细日志</string>
+    <string name="settings_patch_sounds">修补提示音</string>
+    <string name="settings_patch_sounds_description">开始修补与修补完成时各播放一声提示音</string>
+    <string name="settings_patch_sound_library">提示音库</string>
+    <string name="settings_patch_sound_library_description">挑提示音、试听，还能添加自己截取的音频</string>
+    <string name="settings_force_install">强制安装</string>
+    <string name="settings_force_install_description">自动卸载签名冲突的同名应用后再安装</string>
+    <string name="settings_permissions">权限与访问</string>
+    <string name="settings_permissions_description">检查并授予 YTP 需要的权限</string>
     <string name="settings_color_palette">调色盘</string>
     <string name="settings_color_palette_value">主色：%1$s</string>
     <string name="settings_color_palette_title">自定义配色</string>
@@ -116,6 +129,22 @@
 
     <string name="settings_surface_alpha_desc">调低后卡片半透明，替换的背景会透出来</string>
     <string name="settings_about_description">功能介绍</string>
+    <!-- Permission screen -->
+    <string name="permission_title">权限与访问</string>
+    <string name="permission_summary">已就绪 %1$d / %2$d</string>
+    <string name="permission_summary_hint">授予下列权限后，YTP 才能读取应用列表、写入并安装修补后的 APK。</string>
+    <string name="permission_granted">已授权</string>
+    <string name="permission_missing">未授权</string>
+    <string name="permission_unsupported">系统不支持</string>
+    <string name="permission_grant">去授权</string>
+    <string name="permission_apps_title">应用列表</string>
+    <string name="permission_apps_description">用于列出已安装应用，选择需要修补的目标</string>
+    <string name="permission_install_title">安装未知应用</string>
+    <string name="permission_install_description">用于安装修补后的 APK</string>
+    <string name="permission_storage_title">所有文件访问</string>
+    <string name="permission_storage_description">用于读取你选择的 APK 并保存修补结果</string>
+    <string name="permission_media_title">存储权限</string>
+    <string name="permission_media_description">Android 12L 及以下读写修补文件需要</string>
     <!-- About Screen -->
     <string name="about_hook_title">Hook日志路径</string>
     <string name="about_hook_description">/Android/data/目标应用包名/files/ytp/log/</string>
@@ -159,6 +188,8 @@
     <!--Modules / patched apps management-->
     <string name="home_modules">模块</string>
     <string name="home_patched_apps">应用</string>
+    <!--Home entry that starts a new patch (used to be the floating "+" button)-->
+    <string name="home_new_patch_desc">从存储目录或已安装应用中选择</string>
     <string name="module_manager_title">模块</string>
     <string name="module_manager_count">共 %1$d 个已安装模块</string>
     <string name="module_manager_empty_title">没有找到模块</string>
@@ -168,11 +199,35 @@
     <string name="patched_apps_title">应用</string>
     <string name="patched_apps_count">共 %1$d 个已修补应用</string>
     <string name="patched_apps_empty_title">还没有已修补的应用</string>
-    <string name="patched_apps_empty_description">用 YTP 修补成功的应用会显示在这里</string>
+    <string name="patched_apps_empty_description">用 YTP 修补成功的应用会显示在这里，其它工具（HKP、LSPatch、NPatch）修补过的也会列出并标注来源</string>
     <string name="patched_apps_restore_hint">查看并还原打补丁前备份的原包</string>
     <string name="patched_apps_state">已修补</string>
+    <string name="patched_apps_source_hkp">由 HKP 修补</string>
+    <string name="patched_apps_source_lspatch">由 LSPatch 修补</string>
+    <string name="patched_apps_source_npatch">由 NPatch 修补</string>
+    <string name="patched_apps_source_unknown">由未知工具修补</string>
     <string name="patched_apps_extract_original">提取原包</string>
     <string name="patched_apps_repatch">重新修补</string>
+    <string name="patched_apps_recover_original">还原原包</string>
+    <string name="patched_apps_recover_done">已还原 %1$s 的原包</string>
+    <string name="patched_apps_recover_failed">无法还原原包：这个补丁包里没有原包副本</string>
+    <string name="patched_apps_origin_embedded">内含原包副本</string>
+    <string name="patched_apps_assign_original">指定原包文件</string>
+    <string name="patched_apps_assign_done">已把 %1$s 的原包登记为备份</string>
+    <string name="patched_apps_assign_failed">无法使用这个 APK：%1$s</string>
+    <string name="origin_apk_not_a_file">%1$s 不是文件</string>
+    <string name="origin_apk_not_an_apk">%1$s 不是 APK 文件</string>
+    <string name="origin_apk_already_patched">%1$s 已经打过补丁（%2$s），请选择未修补过的原始安装包</string>
+    <string name="origin_apk_create_failed">无法创建 %1$s</string>
+    <string name="origin_apk_store_failed">无法保存 %1$s 的原包备份</string>
+    <string name="origin_apk_not_installed">%1$s 没有安装</string>
+    <string name="origin_apk_none_found">找不到 %1$s 的安装包</string>
+    <string name="origin_apk_no_embedded">%1$s 里没有内嵌的原包副本</string>
+    <string name="origin_apk_embedded_empty">%1$s 里内嵌的原包是空的</string>
+    <string name="origin_apk_open_failed">无法打开选择的文件</string>
+    <string name="install_error_no_apks">没有可安装的 APK 文件</string>
+    <string name="install_error_signer_mismatch">设备上已安装 %1$s，但签名不一致，无法直接覆盖安装；强制安装会先卸载它。</string>
+    <string name="install_error_still_installed">%1$s 仍然安装在设备上：安装已取消</string>
     <string name="patch_repatch_no_backup">没有可用的原包备份</string>
     <string name="patched_apps_no_backup">没有原包备份</string>
     <string name="patched_apps_storage_permission_failed">无法保留所选目录的访问权限，请重新选择。</string>
@@ -184,4 +239,40 @@
     <string name="module_uninstall_title">卸载 %1$s？</string>
     <string name="module_uninstall_message">该模块将从设备上移除，已内嵌该模块的已修补应用不受影响。</string>
     <string name="module_app_info_failed">无法打开 %1$s 的应用信息页</string>
+    <!--提示音：设置页、内置/自定义提示音库与截取弹窗-->
+    <string name="patch_sound_title">修补提示音</string>
+    <string name="patch_sound_start_title">开始修补时的提示音</string>
+    <string name="patch_sound_success_title">修补完成时的提示音</string>
+    <string name="patch_sound_group_default">默认</string>
+    <string name="patch_sound_group_builtin">内置</string>
+    <string name="patch_sound_group_custom">自定义</string>
+    <string name="patch_sound_default_start">开始（默认）</string>
+    <string name="patch_sound_default_success">完成（默认）</string>
+    <string name="patch_sound_missing">已经不可用</string>
+    <string name="patch_sound_choose">选择</string>
+    <string name="patch_sound_preview">试听</string>
+    <string name="patch_sound_stop">停止</string>
+    <string name="patch_sound_delete">删除</string>
+    <string name="patch_sound_delete_builtin_message">内置音效打包在应用里，删除只是把它从列表里移走。想找回来，用下面的「恢复」即可。</string>
+    <string name="patch_sound_delete_custom_message">这会删掉你添加的音频文件，无法撤销。</string>
+    <string name="patch_sound_restore_builtin">恢复已删除的内置提示音（%1$d）</string>
+    <string name="patch_sound_restored">已恢复被删除的提示音</string>
+    <string name="patch_sound_deleted">已删除</string>
+    <string name="patch_sound_empty">没有可用的提示音，先去提示音库添加一个吧。</string>
+    <string name="patch_sound_add_custom">添加自定义音频</string>
+    <string name="patch_sound_add_custom_hint">选一个音频文件，然后截取需要的片段</string>
+    <string name="patch_sound_added">已添加「%1$s」</string>
+    <string name="patch_sound_name">名称</string>
+    <string name="patch_sound_clip">截取：%1$s – %2$s</string>
+    <string name="patch_sound_clip_unavailable">读不出这个文件的时长，将从开头播放</string>
+    <string name="patch_sound_save">保存</string>
+    <string name="patch_sound_cancel">取消</string>
+    <string name="patch_sound_pick_failed">无法读取这个文件</string>
+    <string name="patch_sound_save_failed">保存失败</string>
+    <string name="patch_sound_volume_muted_title">媒体音量为 0</string>
+    <string name="patch_sound_volume_muted">提示音跟着媒体音量走，现在是 0，听不到声音，请先把媒体音量调大。</string>
+    <string name="patch_sound_volume_low_title">媒体音量偏小</string>
+    <string name="patch_sound_volume_low">提示音跟着媒体音量走，现在不到一半，可能听不清，建议把媒体音量调大。</string>
+    <string name="patch_sound_random">随机播放提示音</string>
+    <string name="patch_sound_random_hint">开启后每次修补都从全部可用提示音里随机挑，开始与完成各随机一次，并尽量不连着响同一条；上面选中的两条只在关闭随机时生效。</string>
 </resources>

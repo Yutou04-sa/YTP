@@ -22,6 +22,7 @@ import org.ytp.patch.util.Logger
 import org.ytp.share.YTPConfig
 import org.ytp.share.PatchConfig
 import org.ytp.util.LSPPackageManager
+import org.ytp.util.PatchSounds
 
 class NewPatchViewModel : ViewModel() {
 
@@ -132,9 +133,11 @@ class NewPatchViewModel : ViewModel() {
 
 
     private suspend fun launchPatch() {
+        PatchSounds.playStart()
         logger.i("Launch Patch VersionCode:"+ YTPConfig.instance.VERSION_CODE)
         patchState = try {
             Patcher.patch(logger, patchOptions)
+            PatchSounds.playSuccess()
             PatchState.FINISHED
         } catch (t: Throwable) {
             logger.e(t.message.orEmpty())

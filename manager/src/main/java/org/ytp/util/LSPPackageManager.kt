@@ -271,6 +271,32 @@ object LSPPackageManager {
             }
         }
 
+    /**
+     * Builds an [AppInfo] for an installed app from the apks the system installed it with.
+     *
+     * Used to patch an app again in place, which is only sound for a patch of the branding this
+     * fork used before it was renamed: it is the same framework, so re-patching keeps the apk
+     * usable (the patch step then skips the dex rewrite and replaces the old branding assets),
+     * whereas an LSPatch / NPatch bundle has to be unwrapped with
+     * [OriginApkStore.recoverFromEmbedded] first.
+     */
+    suspend fun installedAppInfo(packageName: String): Result<AppInfo> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val app = lspApp.packageManager.getApplicationInfo(
+                    packageName, PackageManager.GET_META_DATA
+                )
+                AppInfo(
+                    app,
+                    lspApp.packageManager.getApplicationLabel(app).toString(),
+                    isXposedModule(app)
+                )
+            }.recoverCatching { t ->
+                Log.e(TAG, "Failed to load the installed apks of $packageName", t)
+                throw t
+            }
+        }
+
     private fun stageBackupApks(backup: OriginApkStore.Backup): AppInfo {
         val ordered = listOf(backup.baseApk) + backup.apkFiles.filter { it != backup.baseApk }
         var primary: ApplicationInfo? = null

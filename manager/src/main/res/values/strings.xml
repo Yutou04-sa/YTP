@@ -53,6 +53,11 @@
     <string name="patch_return">Return</string>
     <string name="patch_install_successfully">Install successfully</string>
     <string name="patch_install_failed">Install failed</string>
+    <string name="patch_install_checking">Checking the installed app…</string>
+    <string name="patch_install_installing">Installing…</string>
+    <string name="patch_install_conflict_title">Signature mismatch</string>
+    <string name="patch_install_conflict_message">%1$s is already installed and signed with a different key, so the patched app cannot replace it directly. Force install uninstalls it first — its data will be lost.</string>
+    <string name="patch_install_force">Force install</string>
     <string name="patch_no_xposed_module">No Xposed module(s)</string>
     <string name="patch_status_patching">Patching in progress</string>
 
@@ -92,6 +97,14 @@
     <string name="settings_group_other">Other</string>
     <string name="settings_group_other_hint">Learn more</string>
     <string name="settings_detail_patch_logs_description">Detailed logs of patching process</string>
+    <string name="settings_patch_sounds">Patch sounds</string>
+    <string name="settings_patch_sounds_description">Play a sound when patching starts and when it finishes</string>
+    <string name="settings_patch_sound_library">Prompt sound library</string>
+    <string name="settings_patch_sound_library_description">Pick sounds, preview them and add your own clipped audio</string>
+    <string name="settings_force_install">Force install</string>
+    <string name="settings_force_install_description">Uninstall the app that blocks the install automatically</string>
+    <string name="settings_permissions">Permissions</string>
+    <string name="settings_permissions_description">Check and grant the permissions YTP needs</string>
     <string name="settings_color_palette">Color palette</string>
     <string name="settings_color_palette_value">Primary color: %1$s</string>
     <string name="settings_color_palette_title">Customize colors</string>
@@ -119,6 +132,22 @@
 
     <string name="settings_surface_alpha_desc">Lower it to let the background image show through the cards</string>
     <string name="settings_about_description">Feature introduction</string>
+    <!-- Permission screen -->
+    <string name="permission_title">Permissions</string>
+    <string name="permission_summary">%1$d of %2$d ready</string>
+    <string name="permission_summary_hint">Grant the items below so YTP can list installed apps, write the patched APK and install it.</string>
+    <string name="permission_granted">Granted</string>
+    <string name="permission_missing">Not granted</string>
+    <string name="permission_unsupported">Not supported</string>
+    <string name="permission_grant">Grant</string>
+    <string name="permission_apps_title">Installed apps</string>
+    <string name="permission_apps_description">Lets YTP list installed apps so you can pick the target to patch</string>
+    <string name="permission_install_title">Install unknown apps</string>
+    <string name="permission_install_description">Lets YTP install the patched APK</string>
+    <string name="permission_storage_title">All files access</string>
+    <string name="permission_storage_description">Lets YTP read the APK you picked and write the patched result</string>
+    <string name="permission_media_title">Storage</string>
+    <string name="permission_media_description">Needed on Android 12L and below to read and write patch files</string>
     <!-- About Screen -->
     <string name="about_hook_title">Hook log path</string>
     <string name="about_hook_description">/Android/data/Target app package name/files/ytp/log/</string>
@@ -162,6 +191,8 @@
     <!--Modules / patched apps management-->
     <string name="home_modules">Modules</string>
     <string name="home_patched_apps">Apps</string>
+    <!--Home entry that starts a new patch (used to be the floating "+" button)-->
+    <string name="home_new_patch_desc">From storage or from the installed apps</string>
     <string name="module_manager_title">Modules</string>
     <string name="module_manager_count">%1$d installed modules</string>
     <string name="module_manager_empty_title">No modules found</string>
@@ -171,11 +202,35 @@
     <string name="patched_apps_title">Apps</string>
     <string name="patched_apps_count">%1$d patched apps</string>
     <string name="patched_apps_empty_title">No patched apps</string>
-    <string name="patched_apps_empty_description">Apps patched by YTP will be listed here</string>
+    <string name="patched_apps_empty_description">Apps patched by YTP are listed here, together with the ones patched by HKP, LSPatch or NPatch</string>
     <string name="patched_apps_restore_hint">View and restore the apks backed up before patching</string>
     <string name="patched_apps_state">Patched</string>
+    <string name="patched_apps_source_hkp">Patched by HKP</string>
+    <string name="patched_apps_source_lspatch">Patched by LSPatch</string>
+    <string name="patched_apps_source_npatch">Patched by NPatch</string>
+    <string name="patched_apps_source_unknown">Patched by an unknown tool</string>
     <string name="patched_apps_extract_original">Extract original apk</string>
     <string name="patched_apps_repatch">Re-patch</string>
+    <string name="patched_apps_recover_original">Recover original apk</string>
+    <string name="patched_apps_recover_done">Recovered the original apk of %1$s</string>
+    <string name="patched_apps_recover_failed">Unable to recover the original apk: this patch does not keep a copy</string>
+    <string name="patched_apps_origin_embedded">Keeps the original apk</string>
+    <string name="patched_apps_assign_original">Choose the original apk</string>
+    <string name="patched_apps_assign_done">Registered the original apk of %1$s</string>
+    <string name="patched_apps_assign_failed">Unable to use that apk: %1$s</string>
+    <string name="origin_apk_not_a_file">%1$s is not a file</string>
+    <string name="origin_apk_not_an_apk">%1$s is not an apk</string>
+    <string name="origin_apk_already_patched">%1$s is already patched (%2$s). Choose an unpatched original apk.</string>
+    <string name="origin_apk_create_failed">Unable to create %1$s</string>
+    <string name="origin_apk_store_failed">Unable to save the original apk of %1$s</string>
+    <string name="origin_apk_not_installed">%1$s is not installed</string>
+    <string name="origin_apk_none_found">No apk found for %1$s</string>
+    <string name="origin_apk_no_embedded">%1$s does not keep a copy of the original apk</string>
+    <string name="origin_apk_embedded_empty">The original apk kept in %1$s is empty</string>
+    <string name="origin_apk_open_failed">Unable to open the picked file</string>
+    <string name="install_error_no_apks">No apk to install</string>
+    <string name="install_error_signer_mismatch">%1$s is installed with a different signature, so it cannot be replaced directly. Force install uninstalls it first.</string>
+    <string name="install_error_still_installed">%1$s is still installed: the install was cancelled</string>
     <string name="patch_repatch_no_backup">No original apk backup available</string>
     <string name="patched_apps_no_backup">No original apk backed up</string>
     <string name="patched_apps_storage_permission_failed">Cannot keep access to the selected folder. Please pick it again.</string>
@@ -187,4 +242,40 @@
     <string name="module_uninstall_title">Uninstall %1$s?</string>
     <string name="module_uninstall_message">The module will be removed from the device. Apps that already embed a copy of it are not affected.</string>
     <string name="module_app_info_failed">Cannot open the app info page of %1$s</string>
+    <!--Prompt sounds: the settings page, the built-in/custom library and the clip dialog-->
+    <string name="patch_sound_title">Prompt sounds</string>
+    <string name="patch_sound_start_title">Sound when patching starts</string>
+    <string name="patch_sound_success_title">Sound when the patch is done</string>
+    <string name="patch_sound_group_default">Default</string>
+    <string name="patch_sound_group_builtin">Built-in</string>
+    <string name="patch_sound_group_custom">Custom</string>
+    <string name="patch_sound_default_start">Start (default)</string>
+    <string name="patch_sound_default_success">Done (default)</string>
+    <string name="patch_sound_missing">Not available any more</string>
+    <string name="patch_sound_choose">Choose</string>
+    <string name="patch_sound_preview">Preview</string>
+    <string name="patch_sound_stop">Stop</string>
+    <string name="patch_sound_delete">Delete</string>
+    <string name="patch_sound_delete_builtin_message">Built-in sounds ship inside the app, so deleting one only hides it from this list. Use "Restore" below to bring them all back.</string>
+    <string name="patch_sound_delete_custom_message">This deletes the audio file you added. It cannot be undone.</string>
+    <string name="patch_sound_restore_builtin">Restore deleted sounds (%1$d)</string>
+    <string name="patch_sound_restored">Deleted sounds restored</string>
+    <string name="patch_sound_deleted">Deleted</string>
+    <string name="patch_sound_empty">No prompt sound is available. Open the library and add one.</string>
+    <string name="patch_sound_add_custom">Add a custom sound</string>
+    <string name="patch_sound_add_custom_hint">Pick any audio file and cut the part you want</string>
+    <string name="patch_sound_added">Added "%1$s"</string>
+    <string name="patch_sound_name">Name</string>
+    <string name="patch_sound_clip">Clip: %1$s – %2$s</string>
+    <string name="patch_sound_clip_unavailable">The length of this file could not be read, so it plays from the beginning</string>
+    <string name="patch_sound_save">Save</string>
+    <string name="patch_sound_cancel">Cancel</string>
+    <string name="patch_sound_pick_failed">Cannot read that file</string>
+    <string name="patch_sound_save_failed">Cannot save that sound</string>
+    <string name="patch_sound_volume_muted_title">Media volume is 0</string>
+    <string name="patch_sound_volume_muted">The prompt sounds use the media volume, which is 0 right now, so they cannot be heard. Turn the media volume up.</string>
+    <string name="patch_sound_volume_low_title">Media volume is low</string>
+    <string name="patch_sound_volume_low">The prompt sounds use the media volume, which is below half right now, so they may be hard to hear. Turn the media volume up.</string>
+    <string name="patch_sound_random">Play a random sound</string>
+    <string name="patch_sound_random_hint">Both cues are picked at random from the whole library on every patch, and the same sound is not played twice in a row. The two selections above are used only when this is off.</string>
 </resources>

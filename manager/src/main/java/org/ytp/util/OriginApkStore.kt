@@ -13,6 +13,7 @@ import android.content.pm.PackageInfo
 import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import org.ytp.R
 import org.ytp.lspApp
 import org.ytp.share.Constants
 import java.io.File
@@ -46,7 +47,22 @@ object OriginApkStore {
      */
     private const val KEY_PATCHED_PACKAGE = "patchedPackageName"
 
+    /**
+     * Which tool's patched apk the backup was recovered from (see [recoverFromEmbedded]).
+     * Empty for a backup that was taken directly from the installed app before patching.
+     */
+    private const val KEY_RECOVERED_FROM = "recoveredFrom"
+
     private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
+
+    /** 本项目改名成 YTP 之前（HkPatch/HKP）打进去的标记。 */
+    private const val HKP_PATCH_ASSET_PATH = "assets/hkp/config.json"
+
+    /** 上游 LSPatch 打进去的标记。 */
+    private const val LSPATCH_PATCH_ASSET_PATH = "assets/lspatch/config.json"
+
+    /** NPatch 打进去的标记。0.7.2 及更早的 NPatch 用的是 LSPatch 那套路径，只能算作 [PatchSource.LSPATCH]。 */
+    private const val NPATCH_PATCH_ASSET_PATH = "assets/npatch/config.json"
 
     /**
      * 备份时中转用的目录、以及「旧备份先挪走」用的目录，都必须每次运行唯一：
@@ -88,6 +104,8 @@ object OriginApkStore {
         val baseApk: File,
         /** Empty unless the patch was renamed to another package name. */
         val patchedPackageName: String = "",
+        /** Which tool's patch the apk was recovered from, empty for a fresh backup. */
+        val recoveredFrom: String = "",
     ) {
         val size: Long get() = apkFiles.sumOf { if (it.isFile) it.length() else 0L }
     }
@@ -96,14 +114,42 @@ object OriginApkStore {
 
     /**
      * Every asset path that marks an apk as patched: the current one, the branding this fork
-     * used before it was renamed, and the one of upstream LSPatch. Only used to avoid backing
-     * up an already patched build as if it were an original one.
+     * used before it was renamed, and the ones of upstream LSPatch and NPatch. The patch list of
+     * the manager shows all of them (see [patchSourceOf]), the backup only has to avoid storing
+     * an already patched build as if it were an original one.
      */
     private val ANY_PATCH_ASSET_PATHS = listOf(
         Constants.CONFIG_ASSET_PATH,
-        "assets/hkp/config.json",
-        "assets/lspatch/config.json",
+        HKP_PATCH_ASSET_PATH,
+        LSPATCH_PATCH_ASSET_PATH,
+        NPATCH_PATCH_ASSET_PATH,
     )
+
+    /** Which tool patched an apk. Only [YTP] patches are managed by this manager. */
+    enum class PatchSource { YTP, HKP, LSPATCH, NPATCH, UNKNOWN }
+
+    /**
+     * The tool that patched the given APK, or null when it carries no known patch marker.
+     *
+     * 读不出 zip 时返回 [PatchSource.UNKNOWN]（同 [isPatchedApk]）：宁可让用户看到一条来源
+     * 未知的条目，也不能把一个可能已打补丁的包装成原包。
+     */
+    fun patchSourceOf(file: File): PatchSource? = try {
+        ZipFile(file).use { zip ->
+            when {
+                zip.getEntry(Constants.CONFIG_ASSET_PATH) != null -> PatchSource.YTP
+                zip.getEntry(HKP_PATCH_ASSET_PATH) != null -> PatchSource.HKP
+                // NPatch 0.7.2 及更早版本写的就是 LSPatch 那套路径，无法与 LSPatch 区分；
+                // 两者都能靠内嵌的 origin.apk 还原原包，所以这里合并成一个来源没问题。
+                zip.getEntry(LSPATCH_PATCH_ASSET_PATH) != null -> PatchSource.LSPATCH
+                zip.getEntry(NPATCH_PATCH_ASSET_PATH) != null -> PatchSource.NPATCH
+                else -> null
+            }
+        }
+    } catch (t: Throwable) {
+        Log.e(TAG, "Failed to inspect ${file.path}; assuming it is already patched", t)
+        PatchSource.UNKNOWN
+    }
 
     /**
      * True when the given APK was patched by this manager — only YTP patches are accepted.
@@ -133,11 +179,17 @@ object OriginApkStore {
      * Copies [sourceApks] (base first, then splits) into the private backup directory.
      * Nothing is written when the source is already a patched APK or when the very same
      * version has been backed up before.
+     *
+     * [skipPatchCheck] is only for [recoverFromEmbedded]: the apks that come out of an LSPatch /
+     * NPatch bundle are originals by construction, but the installed apk they are read from
+     * obviously carries a patch marker.
      */
     fun backup(
         packageName: String,
         sourceApks: List<String>,
         patchedPackageName: String = "",
+        skipPatchCheck: Boolean = false,
+        recoveredFrom: String = "",
     ): Backup? {
         if (packageName.isBlank()) return null
         val sources = sourceApks.map(::File).filter { it.isFile }
@@ -146,7 +198,7 @@ object OriginApkStore {
             return null
         }
         val base = sources.first()
-        if (carriesAnyPatch(base)) {
+        if (!skipPatchCheck && carriesAnyPatch(base)) {
             Log.w(TAG, "$packageName is already patched, backup skipped")
             return null
         }
@@ -184,6 +236,9 @@ object OriginApkStore {
                 if (patchedPackageName.isNotEmpty()) {
                     setProperty(KEY_PATCHED_PACKAGE, patchedPackageName)
                 }
+                if (recoveredFrom.isNotEmpty()) {
+                    setProperty(KEY_RECOVERED_FROM, recoveredFrom)
+                }
             }
             File(tmp, META_FILE).outputStream().use { meta.store(it, null) }
             // Move the previous backup aside instead of deleting it: a failure between the two
@@ -217,6 +272,95 @@ object OriginApkStore {
             // A real failure must not look like "nothing to back up": the caller reports it to the user.
             throw if (t is IOException) t else IOException("Failed to back up $packageName", t)
         }
+    }
+
+    /**
+     * Rebuilds the original apk of [packageName] from the embedded copy an LSPatch / NPatch patch
+     * keeps inside the patched apk and stores it as a normal backup, so the app can be re-patched
+     * from the untouched original and exported again.
+     *
+     * A YTP patch — and one of the branding this fork used before — rewrites the app's dex in
+     * place and keeps no copy, so for those this always fails and the caller tells the user.
+     */
+    fun recoverFromEmbedded(packageName: String): Result<Backup> = try {
+        val appInfo = installedInfo(packageName)?.applicationInfo
+            ?: throw IOException(lspApp.getString(R.string.origin_apk_not_installed, packageName))
+        val sources = (listOf(appInfo.sourceDir) + appInfo.splitSourceDirs.orEmpty().toList())
+            .filterNotNull()
+            .map(::File)
+            .filter { it.isFile }
+        if (sources.isEmpty()) {
+            throw IOException(lspApp.getString(R.string.origin_apk_none_found, packageName))
+        }
+        val from = patchSourceOf(sources.first())
+        val temp = File(lspApp.cacheDir, "origin-recovery/$packageName")
+        temp.deleteRecursively()
+        try {
+            val recovered = OriginApkRecovery.recover(sources, temp)
+            // The recovered base apk is what the developer shipped, so its package name is the
+            // original one — different from the installed one when the patch was renamed.
+            val originalPackage = archiveInfo(recovered.first())?.packageName ?: packageName
+            val backup = backup(
+                packageName = originalPackage,
+                sourceApks = recovered.map { it.absolutePath },
+                patchedPackageName = if (originalPackage != packageName) packageName else "",
+                skipPatchCheck = true,
+                recoveredFrom = from?.name.orEmpty().lowercase(),
+            ) ?: throw IOException(lspApp.getString(R.string.origin_apk_store_failed, packageName))
+            Log.i(TAG, "Recovered the original apk of $packageName (from ${from ?: PatchSource.UNKNOWN})")
+            Result.success(backup)
+        } finally {
+            temp.deleteRecursively()
+        }
+    } catch (t: Throwable) {
+        Log.e(TAG, "Failed to recover the original apk of $packageName", t)
+        Result.failure(t)
+    }
+
+    /**
+     * Stores an apk the user picked by hand as the original of [patchedPackageName].
+     *
+     * A YTP patch — and one of the branding this fork used before — rewrites the app's dex in place
+     * and keeps no copy of the original, so when the backup is missing as well there is nothing to
+     * extract. What is left is the untouched apk the user installed the app from, which is what
+     * this registers: the picked file has to be an apk that carries no patch marker, and it is
+     * stored under its own (original) package name, with [patchedPackageName] recorded when the
+     * patch was installed under a different name.
+     */
+    fun registerOriginal(patchedPackageName: String, source: File): Result<Backup> = try {
+        if (!source.isFile) throw IOException(lspApp.getString(R.string.origin_apk_not_a_file, source.name))
+        val picked = archiveInfo(source)
+            ?: throw IOException(lspApp.getString(R.string.origin_apk_not_an_apk, source.name))
+        patchSourceOf(source)?.let {
+            throw IllegalArgumentException(
+                lspApp.getString(R.string.origin_apk_already_patched, source.name, it.name)
+            )
+        }
+        val originalPackage = picked.packageName?.takeIf { it.isNotBlank() } ?: patchedPackageName
+        val temp = File(lspApp.cacheDir, "manual-origin/$patchedPackageName")
+        temp.deleteRecursively()
+        try {
+            if (!temp.mkdirs() && !temp.isDirectory) {
+                throw IOException(lspApp.getString(R.string.origin_apk_create_failed, temp.path))
+            }
+            val staged = File(temp, "base.apk")
+            source.copyTo(staged, overwrite = true)
+            val backup = backup(
+                packageName = originalPackage,
+                sourceApks = listOf(staged.absolutePath),
+                patchedPackageName = if (originalPackage != patchedPackageName) patchedPackageName else "",
+                // 上面已经确认这个文件本身不是补丁包了。
+                skipPatchCheck = true,
+                recoveredFrom = "manual",
+            ) ?: throw IOException(lspApp.getString(R.string.origin_apk_store_failed, patchedPackageName))
+            Log.i(TAG, "Registered the picked original apk of $patchedPackageName ($originalPackage)")
+            Result.success(backup)
+        } finally {
+            temp.deleteRecursively()
+        }
+    } catch (t: Throwable) {
+        Log.e(TAG, "Failed to register the original apk of $patchedPackageName", t)
+        Result.failure(t)
     }
 
     fun listBackups(): List<Backup> {
@@ -317,6 +461,7 @@ object OriginApkStore {
             apkFiles = listOf(base) + files.filter { it != base },
             baseApk = base,
             patchedPackageName = meta.getProperty(KEY_PATCHED_PACKAGE).orEmpty(),
+            recoveredFrom = meta.getProperty(KEY_RECOVERED_FROM).orEmpty(),
         )
     }
 

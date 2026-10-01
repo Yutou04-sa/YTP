@@ -35,8 +35,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -63,6 +65,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
@@ -88,6 +91,7 @@ import org.ytp.ui.page.destinations.RestoreScreenDestination
 import org.ytp.ui.theme.YtpColors
 import org.ytp.ui.util.LocalSnackbarHost
 import org.ytp.util.LSPPackageManager
+import org.ytp.util.OriginApkRecovery
 import org.ytp.util.OriginApkStore
 import java.io.File
 import java.util.Locale
@@ -109,12 +113,40 @@ private data class PatchedApp(
     val versionName: String,
     val apkSize: Long,
     /** The original apks that were backed up before patching, null when there is none. */
-    val backup: OriginApkStore.Backup?
+    val backup: OriginApkStore.Backup?,
+    /** Who patched the apk: only [OriginApkStore.PatchSource.YTP] builds can be re-patched. */
+    val patchedBy: OriginApkStore.PatchSource,
+    /**
+     * Whether the patched apk still carries the untouched original apk of the app. Only LSPatch
+     * and NPatch keep such a copy; a YTP patch rewrites the app's dex in place and loses it.
+     */
+    val originRecoverable: Boolean
 )
 
+/** 条目上那枚标记：YTP 自己的补丁沿用原来的「已修补」，其它来源标出是谁打的。 */
+private fun patchSourceLabel(source: OriginApkStore.PatchSource): Int = when (source) {
+    OriginApkStore.PatchSource.YTP -> R.string.patched_apps_state
+    OriginApkStore.PatchSource.HKP -> R.string.patched_apps_source_hkp
+    OriginApkStore.PatchSource.LSPATCH -> R.string.patched_apps_source_lspatch
+    OriginApkStore.PatchSource.NPATCH -> R.string.patched_apps_source_npatch
+    OriginApkStore.PatchSource.UNKNOWN -> R.string.patched_apps_source_unknown
+}
+
+/** 外来的补丁（HKP/LSPatch/NPatch）不是本管理器管理的，用中性色而不是「已修补」的绿色。 */
+private fun patchSourceAccent(source: OriginApkStore.PatchSource): Color = when (source) {
+    OriginApkStore.PatchSource.YTP -> YtpColors.Success
+    else -> YtpColors.AccentPurple
+}
+
 /**
- * Overview of the installed apps whose apk carries a YTP patch. Every app offers to extract
- * the original apk that was backed up before it got patched; the complete backup list stays
+ * Overview of the installed apps whose apk carries a patch marker: YTP patches plus the ones of
+ * the branding this fork used before it was renamed and of upstream LSPatch and NPatch, each
+ * labeled with its source.
+ *
+ * Apps with a YTP backup offer to re-patch and to extract the original apk; the ones patched by
+ * LSPatch or NPatch carry the original apk inside the patched apk, so they offer to recover it
+ * first (after that the same two actions become available). A HKP patch is the same framework as
+ * YTP under its previous name, so it can be re-patched in place. The complete backup list stays
  * reachable through [RestoreScreenDestination].
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -126,6 +158,10 @@ fun PatchedAppsScreen(navigator: DestinationsNavigator) {
     var refreshKey by remember { mutableIntStateOf(0) }
     var pendingExtract by remember { mutableStateOf<OriginApkStore.Backup?>(null) }
     var pendingRepatch by remember { mutableStateOf<String?>(null) }
+    var recovering by remember { mutableStateOf(false) }
+    // 没有备份、补丁包里也没有原包时（YTP/HKP 都是就地改写宿主 dex），只能让用户自己指一份
+    // 未修补的原包；这里记下要登记到哪个已安装的补丁包名下。
+    var assignTarget by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val snackbarHost = LocalSnackbarHost.current
@@ -148,6 +184,45 @@ fun PatchedAppsScreen(navigator: DestinationsNavigator) {
                     onFailure = { context.getString(R.string.restore_extract_failed) }
                 )
             )
+        }
+    }
+
+    // 手动指定原包：用户从文件管理器里挑一份没打过补丁的原始 apk，登记成这个应用的备份，
+    // 之后就能和自动备份一样「重新修补 / 导出原包 / 装回原版」了。
+    val assignLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val packageName = assignTarget
+        assignTarget = null
+        if (packageName == null || uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val assigned = withContext(Dispatchers.IO) {
+                runCatching {
+                    val staged = File(context.cacheDir, "picked-original.apk")
+                    try {
+                        val input = context.contentResolver.openInputStream(uri)
+                            ?: throw IllegalStateException(
+                                context.getString(R.string.origin_apk_open_failed)
+                            )
+                        input.use { source ->
+                            staged.outputStream().use { target -> source.copyTo(target) }
+                        }
+                        OriginApkStore.registerOriginal(packageName, staged).getOrThrow()
+                    } finally {
+                        staged.delete()
+                    }
+                }
+            }
+            snackbarHost.showSnackbar(
+                assigned.fold(
+                    onSuccess = { context.getString(R.string.patched_apps_assign_done, it.label) },
+                    onFailure = {
+                        context.getString(R.string.patched_apps_assign_failed, it.message.orEmpty())
+                    }
+                )
+            )
+            // 登记成功后这一条就有备份了，重新扫一遍让 chip 和菜单跟着变。
+            if (assigned.isSuccess) refreshKey++
         }
     }
 
@@ -221,16 +296,24 @@ fun PatchedAppsScreen(navigator: DestinationsNavigator) {
             }
             LSPPackageManager.appList.mapNotNull { info ->
                 val source = File(info.app.sourceDir)
-                if (!OriginApkStore.isPatchedApk(source)) {
-                    null
-                } else {
-                    PatchedApp(
-                        app = info,
-                        versionName = LSPPackageManager.getVersionName(info.app.packageName),
-                        apkSize = source.length(),
-                        backup = backups[info.app.packageName]
-                    )
+                // 只认 YTP 自己的补丁的话，被 HKP/LSPatch/NPatch 修补过的应用会凭空消失，
+                // 所以这里接受任何一种已知标记，再由卡片标出是谁打的。
+                val patchedBy = OriginApkStore.patchSourceOf(source) ?: return@mapNotNull null
+                // 分裂包的每个 apk 各自带一份内嵌原包，缺一个都还原不出完整的原包。
+                val sources = buildList {
+                    add(source)
+                    info.app.splitSourceDirs?.forEach { add(File(it)) }
                 }
+                PatchedApp(
+                    app = info,
+                    versionName = LSPPackageManager.getVersionName(info.app.packageName),
+                    apkSize = source.length(),
+                    backup = backups[info.app.packageName],
+                    patchedBy = patchedBy,
+                    originRecoverable = patchedBy != OriginApkStore.PatchSource.YTP &&
+                        patchedBy != OriginApkStore.PatchSource.HKP &&
+                        OriginApkRecovery.canRecover(sources)
+                )
             }
         }
         loading = false
@@ -249,77 +332,120 @@ fun PatchedAppsScreen(navigator: DestinationsNavigator) {
             )
         }
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // 「原包」入口常显：加载中、列表为空、有内容时都能进入备份/还原页
-            RestoreOriginalEntry(
-                onClick = { navigator.navigate(RestoreScreenDestination) },
-                modifier = Modifier.padding(
-                    start = PageHorizontalPadding,
-                    end = PageHorizontalPadding,
-                    top = PageVerticalSpacing
+            Column(modifier = Modifier.fillMaxSize()) {
+                // 「原包」入口常显：加载中、列表为空、有内容时都能进入备份/还原页
+                RestoreOriginalEntry(
+                    onClick = { navigator.navigate(RestoreScreenDestination) },
+                    modifier = Modifier.padding(
+                        start = PageHorizontalPadding,
+                        end = PageHorizontalPadding,
+                        top = PageVerticalSpacing
+                    )
                 )
-            )
 
-            Box(modifier = Modifier.weight(1f)) {
-                when {
-                    loading -> CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
-                        color = YtpColors.Primary
-                    )
+                Box(modifier = Modifier.weight(1f)) {
+                    when {
+                        // 加载中的转圈画在整页正中（见下方覆盖层）：这个 Box 只占「原包」入口
+                        // 以下的区域，转圈放在这里会显得偏下。
+                        loading -> Unit
 
-                    items.isEmpty() -> YtpEmptyState(
-                        title = stringResource(R.string.patched_apps_empty_title),
-                        modifier = Modifier.align(Alignment.Center),
-                        icon = Icons.Outlined.VerifiedUser,
-                        supportingText = stringResource(R.string.patched_apps_empty_description)
-                    )
+                        items.isEmpty() -> YtpEmptyState(
+                            title = stringResource(R.string.patched_apps_empty_title),
+                            modifier = Modifier.align(Alignment.Center),
+                            icon = Icons.Outlined.VerifiedUser,
+                            supportingText = stringResource(R.string.patched_apps_empty_description)
+                        )
 
-                    else -> LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            horizontal = PageHorizontalPadding,
-                            vertical = PageVerticalSpacing
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        item {
-                            Text(
-                                text = stringResource(R.string.patched_apps_count, items.size),
-                                modifier = Modifier.fillMaxWidth(),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = YtpColors.TextSecondary
-                            )
-                        }
-                        items(items, key = { it.app.app.packageName }) { item ->
-                            PatchedAppCard(
-                                item = item,
-                                onRepatch = {
-                                    val packageName = item.app.app.packageName
-                                    if (Configs.storageDirectory == null) {
-                                        pendingRepatch = packageName
-                                        storageLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
-                                    } else {
-                                        navigator.navigate(
-                                            NewPatchScreenDestination(
-                                                id = ACTION_BACKUP,
-                                                backupPackage = packageName
+                        else -> LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                horizontal = PageHorizontalPadding,
+                                vertical = PageVerticalSpacing
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            item {
+                                Text(
+                                    text = stringResource(R.string.patched_apps_count, items.size),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = YtpColors.TextSecondary
+                                )
+                            }
+                            items(items, key = { it.app.app.packageName }) { item ->
+                                PatchedAppCard(
+                                    item = item,
+                                    onRepatch = {
+                                        val packageName = item.app.app.packageName
+                                        if (Configs.storageDirectory == null) {
+                                            pendingRepatch = packageName
+                                            storageLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+                                        } else {
+                                            navigator.navigate(
+                                                NewPatchScreenDestination(
+                                                    id = ACTION_BACKUP,
+                                                    backupPackage = packageName
+                                                )
+                                            )
+                                        }
+                                    },
+                                    onExtract = {
+                                        val backup = item.backup ?: return@PatchedAppCard
+                                        pendingExtract = backup
+                                        extractLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+                                    },
+                                    onRecover = {
+                                        val packageName = item.app.app.packageName
+                                        recovering = true
+                                        scope.launch {
+                                            val recovered = withContext(Dispatchers.IO) {
+                                                OriginApkStore.recoverFromEmbedded(packageName)
+                                            }
+                                            recovering = false
+                                            snackbarHost.showSnackbar(
+                                                recovered.fold(
+                                                    onSuccess = {
+                                                        context.getString(
+                                                            R.string.patched_apps_recover_done,
+                                                            it.label
+                                                        )
+                                                    },
+                                                    onFailure = {
+                                                        context.getString(R.string.patched_apps_recover_failed)
+                                                    }
+                                                )
+                                            )
+                                            // 还原成功后这一条就有备份了，重新扫一遍让菜单跟着变。
+                                            if (recovered.isSuccess) refreshKey++
+                                        }
+                                    },
+                                    onAssign = {
+                                        assignTarget = item.app.app.packageName
+                                        assignLauncher.launch(
+                                            arrayOf(
+                                                "application/vnd.android.package-archive",
+                                                "application/octet-stream",
+                                                "application/zip"
                                             )
                                         )
                                     }
-                                },
-                                onExtract = {
-                                    val backup = item.backup ?: return@PatchedAppCard
-                                    pendingExtract = backup
-                                    extractLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
+            }
+
+            if (loading || recovering) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = YtpColors.Primary
+                )
             }
         }
     }
@@ -395,7 +521,9 @@ private fun RestoreOriginalEntry(
 private fun PatchedAppCard(
     item: PatchedApp,
     onRepatch: () -> Unit,
-    onExtract: () -> Unit
+    onExtract: () -> Unit,
+    onRecover: () -> Unit,
+    onAssign: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -441,18 +569,26 @@ private fun PatchedAppCard(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     InfoChip(
-                        text = stringResource(R.string.patched_apps_state),
-                        accent = YtpColors.Success
+                        text = stringResource(patchSourceLabel(item.patchedBy)),
+                        accent = patchSourceAccent(item.patchedBy)
                     )
                     if (item.versionName.isNotBlank()) {
                         InfoChip(text = item.versionName)
                     }
                     InfoChip(text = formatApkSize(item.apkSize))
                     if (item.backup == null) {
-                        InfoChip(
-                            text = stringResource(R.string.patched_apps_no_backup),
-                            accent = YtpColors.Warning
-                        )
+                        if (item.originRecoverable) {
+                            // 没有自己的备份，但补丁包里带着原包，能从那儿还原出来。
+                            InfoChip(
+                                text = stringResource(R.string.patched_apps_origin_embedded),
+                                accent = YtpColors.AccentPurple
+                            )
+                        } else {
+                            InfoChip(
+                                text = stringResource(R.string.patched_apps_no_backup),
+                                accent = YtpColors.Warning
+                            )
+                        }
                     }
                 }
             }
@@ -469,12 +605,42 @@ private fun PatchedAppCard(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false }
                 ) {
+                    if (item.backup == null && item.originRecoverable) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.patched_apps_recover_original)) },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.Restore, contentDescription = null)
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onRecover()
+                            }
+                        )
+                    }
+                    if (item.backup == null) {
+                        // YTP/HKP 的补丁是就地改写宿主 dex 的，包里没有原包，只能让用户指一份。
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.patched_apps_assign_original)) },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.FileOpen, contentDescription = null)
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onAssign()
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.patched_apps_repatch)) },
                         leadingIcon = {
                             Icon(Icons.Outlined.Refresh, contentDescription = null)
                         },
-                        enabled = item.backup != null,
+                        // HKP 是本项目改名前的同一个框架，它的补丁包能就地换成 YTP 的补丁；
+                        // LSPatch/NPatch 的包内自带原包，重打时会先自动提取成备份再打；其它情况
+                        // 必须有原包备份才能重打。
+                        enabled = item.backup != null ||
+                            item.originRecoverable ||
+                            item.patchedBy == OriginApkStore.PatchSource.HKP,
                         onClick = {
                             menuExpanded = false
                             onRepatch()

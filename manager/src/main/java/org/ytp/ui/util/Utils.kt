@@ -14,8 +14,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
+import android.content.pm.Signature
+import android.os.Build
+import android.util.Base64
 import android.util.Log
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.core.content.ContextCompat
@@ -26,9 +30,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.ytp.R
 import java.io.File
+import java.security.MessageDigest
 
 const val ACTION_INSTALL_RESULT = "org.ytp.manager.INSTALL_RESULT"
 
@@ -218,5 +225,155 @@ fun uninstallApk(context: Context, packageName: String) {
         context.startActivity(intent)
     } catch (e: Exception) {
         Log.e("YTP", "Failed to uninstall $packageName", e)
+    }
+}
+
+/** How long the uninstall of a conflicting package is waited for before giving up. */
+private const val UNINSTALL_TIMEOUT_MS = 2 * 60 * 1000L
+
+/** Poll interval while waiting for the uninstalled package to disappear. */
+private const val UNINSTALL_POLL_MS = 500L
+
+/** What handing the patched apks to the installer will do to the device. */
+enum class InstallPlan {
+    /** No app with that package name is installed: a plain install. */
+    NEW_INSTALL,
+
+    /** Installed and signed with the same key: the patched apks replace it directly. */
+    OVERWRITE,
+
+    /** Installed but signed with another key: the system refuses the update. */
+    SIGNER_MISMATCH,
+}
+
+/** The installed app a patched apk would replace, as seen by [planInstall]. */
+data class InstallTarget(
+    val packageName: String,
+    val installedVersionCode: Long?,
+    val apkVersionCode: Long,
+    val plan: InstallPlan,
+)
+
+/** Outcome of [installPatched]: the install status plus the plan it was decided from. */
+data class InstallOutcome(
+    val result: InstallResult,
+    val target: InstallTarget?,
+    /** True when [target] has a signature conflict and [force] was not requested. */
+    val needsForce: Boolean = false,
+)
+
+/**
+ * Decides what installing [apkFiles] would do to this device: install from scratch, overwrite an
+ * app that was signed with the same key, or hit a signature conflict.
+ *
+ * Returns null when the apks carry no readable package name.
+ */
+suspend fun planInstall(context: Context, apkFiles: List<File>): InstallTarget? =
+    withContext(Dispatchers.IO) {
+        val files = apkFiles.filter { it.isFile }
+        if (files.isEmpty()) return@withContext null
+        val packageManager = context.packageManager
+        val archive = files.firstNotNullOfOrNull { file ->
+            packageManager.getPackageArchiveInfo(
+                file.absolutePath,
+                PackageManager.GET_SIGNING_CERTIFICATES,
+            )
+        } ?: return@withContext null
+        val packageName = archive.packageName ?: return@withContext null
+        val apkSigners = signerDigests(archive)
+        val installed = try {
+            packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+        } catch (_: PackageManager.NameNotFoundException) {
+            null
+        }
+        val plan = when {
+            installed == null -> InstallPlan.NEW_INSTALL
+            // 已安装应用的签名历史（换过签名密钥时会有多个）与本包签名有交集就允许覆盖安装。
+            signerDigests(installed).any { it in apkSigners } -> InstallPlan.OVERWRITE
+            else -> InstallPlan.SIGNER_MISMATCH
+        }
+        InstallTarget(packageName, installed?.longVersionCode, archive.longVersionCode, plan)
+    }
+
+/**
+ * Installs the patched apks after checking what they are about to replace.
+ *
+ * Nothing installed → plain install. Installed with the same signing key → overwrite. Installed
+ * with a different key → the system would reject the update, so the caller gets
+ * [InstallOutcome.needsForce] back and only [force] turns that into "uninstall the old app
+ * first, then install" (the setting [org.ytp.config.Configs.forceInstall] passes force without
+ * asking again).
+ */
+suspend fun installPatched(
+    context: Context,
+    apkFiles: List<File>,
+    force: Boolean = false,
+): InstallOutcome {
+    val target = planInstall(context, apkFiles)
+    if (target?.plan == InstallPlan.SIGNER_MISMATCH) {
+        if (!force) {
+            return InstallOutcome(
+                InstallResult(
+                    PackageInstaller.STATUS_FAILURE,
+                    context.getString(R.string.install_error_signer_mismatch, target.packageName),
+                ),
+                target,
+                needsForce = true,
+            )
+        }
+        Log.w(TAG, "Signature mismatch on ${target.packageName}: uninstalling it first")
+        if (!uninstallAndWait(context, target.packageName)) {
+            return InstallOutcome(
+                InstallResult(
+                    PackageInstaller.STATUS_FAILURE,
+                    context.getString(R.string.install_error_still_installed, target.packageName),
+                ),
+                target,
+            )
+        }
+    }
+    return InstallOutcome(installApks(context, apkFiles), target)
+}
+
+/**
+ * Opens the system uninstall screen and waits until the package is really gone.
+ *
+ * The uninstall screen reports nothing back, so the package list is polled instead; returns false
+ * when the user kept the app (or when it is still there after [UNINSTALL_TIMEOUT_MS]).
+ */
+private suspend fun uninstallAndWait(context: Context, packageName: String): Boolean =
+    withContext(Dispatchers.IO) {
+        if (!isPackageInstalled(context, packageName)) return@withContext true
+        uninstallApk(context, packageName)
+        withTimeoutOrNull(UNINSTALL_TIMEOUT_MS) {
+            while (isPackageInstalled(context, packageName)) delay(UNINSTALL_POLL_MS)
+        }
+        !isPackageInstalled(context, packageName)
+    }
+
+/** True when [packageName] is currently installed. */
+private fun isPackageInstalled(context: Context, packageName: String): Boolean = try {
+    context.packageManager.getPackageInfo(packageName, 0)
+    true
+} catch (_: PackageManager.NameNotFoundException) {
+    false
+}
+
+/**
+ * SHA-256 digests (base64) of every certificate that may sign [info], so two packages can be
+ * compared without depending on the order the signatures are reported in.
+ */
+private fun signerDigests(info: PackageInfo): Set<String> {
+    val signing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.signingInfo else null
+    val signatures: List<Signature> = if (signing != null) {
+        signing.apkContentsSigners.toList() +
+            (signing.signingCertificateHistory?.toList() ?: emptyList())
+    } else {
+        @Suppress("DEPRECATION")
+        info.signatures?.toList() ?: emptyList()
+    }
+    val digest = MessageDigest.getInstance("SHA-256")
+    return signatures.mapTo(mutableSetOf()) {
+        Base64.encodeToString(digest.digest(it.toByteArray()), Base64.NO_WRAP)
     }
 }

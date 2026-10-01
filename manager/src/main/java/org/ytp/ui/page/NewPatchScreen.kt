@@ -55,6 +55,7 @@ import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -107,12 +108,10 @@ import org.ytp.ui.component.YtpCard
 import org.ytp.ui.component.YtpIconContainer
 import org.ytp.ui.component.YtpSectionHeader
 import org.ytp.ui.theme.YtpColors
-import org.ytp.ui.util.installApks
 import org.ytp.ui.util.lastItemIndex
 import org.ytp.ui.viewmodel.NewPatchViewModel
 
 private const val TAG = "NewPatchPage"
-
 const val ACTION_STORAGE = 0
 const val ACTION_APPLIST = 1
 const val ACTION_INTENT_INSTALL = 2
@@ -154,6 +153,9 @@ fun NewPatchScreen(
 
     var showSelectModuleDialog by remember { mutableStateOf(false) }
     val noXposedModules = stringResource(R.string.patch_no_xposed_module)
+    // 点「开始修补」时按媒体音量档位给的提示（见 PatchSounds.volumeLevel）
+    val volumeMutedText = stringResource(R.string.patch_sound_volume_muted)
+    val volumeLowText = stringResource(R.string.patch_sound_volume_low)
     val storageModuleLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { apks ->
             if (apks.isEmpty()) {
@@ -208,24 +210,58 @@ fun NewPatchScreen(
                             navigator.navigateUp()
                         } else {
                             scope.launch {
-                                val previousName = withContext(Dispatchers.IO) {
+                                var backup = withContext(Dispatchers.IO) {
                                     org.ytp.util.OriginApkStore.findBackup(packageName)
-                                        ?.patchedPackageName
-                                        .orEmpty()
                                 }
-                                org.ytp.util.LSPPackageManager.getAppInfoFromBackup(packageName)
-                                    .onSuccess {
-                                        viewModel.dispatch(
-                                            NewPatchViewModel.ViewAction.ConfigurePatch(it)
+                                if (backup == null) {
+                                    // 重新修补 = 先拿到原包备份再开始修补：LSPatch/NPatch 会把自己
+                                    // 打的那个原包整份塞在补丁包里，这里先把它提取出来登记成普通备份，
+                                    // 之后就和「有备份的重打」完全一样（拿到的是开发者原签名的原包）。
+                                    backup = withContext(Dispatchers.IO) {
+                                        org.ytp.util.OriginApkStore.recoverFromEmbedded(packageName)
+                                    }.onFailure {
+                                        Log.w(TAG, "No embedded original apk in $packageName", it)
+                                    }.getOrNull()
+                                }
+                                // Re-patching a renamed app keeps its package name
+                                val previousName = backup?.patchedPackageName.orEmpty()
+                                val info = if (backup != null) {
+                                    org.ytp.util.LSPPackageManager.getAppInfoFromBackup(packageName)
+                                } else {
+                                    // 既没有备份、包内也没有原包时只剩一种情况还能直接重打：HKP（本
+                                    // 项目改名前的同一个框架）的补丁包。YTPPatch 会认出旧品牌标记并
+                                    // 走 update 分支，跳过 dex 改写、清掉旧品牌残留。LSPatch/NPatch
+                                    // 的补丁包只能靠内嵌原包重打（比如 split 包就没有内嵌原包），
+                                    // 硬叠一层是错的，所以这里不再兜底。
+                                    val installed =
+                                        org.ytp.util.LSPPackageManager.installedAppInfo(packageName)
+                                    val source = installed.getOrNull()?.let { app ->
+                                        withContext(Dispatchers.IO) {
+                                            org.ytp.util.OriginApkStore.patchSourceOf(
+                                                java.io.File(app.app.sourceDir)
+                                            )
+                                        }
+                                    }
+                                    if (source == org.ytp.util.OriginApkStore.PatchSource.HKP) {
+                                        installed
+                                    } else {
+                                        Result.failure(
+                                            IllegalStateException(
+                                                "No embedded original apk in $packageName (source=$source)"
+                                            )
                                         )
-                                        // Re-patching a renamed app keeps its package name
-                                        viewModel.newPackageName = previousName
                                     }
-                                    .onFailure {
-                                        Log.w(TAG, "No original apks to re-patch $packageName", it)
-                                        snackbarHost.showSnackbar(noOriginalBackup)
-                                        navigator.navigateUp()
-                                    }
+                                }
+                                info.onSuccess {
+                                    viewModel.dispatch(
+                                        NewPatchViewModel.ViewAction.ConfigurePatch(it)
+                                    )
+                                    viewModel.newPackageName = previousName
+                                }.onFailure {
+                                    Log.w(TAG, "No original apks to re-patch $packageName", it)
+                                    snackbarHost.showSnackbar(noOriginalBackup)
+                                    navigator.navigateUp()
+                                }
                             }
                         }
                     }
@@ -262,7 +298,24 @@ fun NewPatchScreen(
                     PatchOptionsBody(
                         modifier = Modifier.padding(innerPadding),
                         onBackClick = { navigator.navigateUp() },
-                        onAddEmbed = { showSelectModuleDialog = true }
+                        onAddEmbed = { showSelectModuleDialog = true },
+                        onStartPatch = {
+                            // 提示音跟媒体音量走（见 PatchSounds.volumeLevel）：点「开始修补」的那一刻就提醒，
+                            // 等进了修补流程再调音量已经晚了，那两声本来就听不清
+                            val soundVolume = org.ytp.util.PatchSounds.volumeLevel()
+                            if (soundVolume != org.ytp.util.PatchSounds.VolumeLevel.OK) {
+                                scope.launch {
+                                    snackbarHost.showSnackbar(
+                                        if (soundVolume == org.ytp.util.PatchSounds.VolumeLevel.MUTED) {
+                                            volumeMutedText
+                                        } else {
+                                            volumeLowText
+                                        }
+                                    )
+                                }
+                            }
+                            viewModel.dispatch(NewPatchViewModel.ViewAction.SubmitPatch)
+                        }
                     )
                     resultRecipient.onNavResult {
                         if (it is NavResult.Value) {
@@ -621,7 +674,8 @@ private fun EmbedModuleSourceOption(
 private fun PatchOptionsBody(
     modifier: Modifier,
     onBackClick: () -> Unit,
-    onAddEmbed: () -> Unit
+    onAddEmbed: () -> Unit,
+    onStartPatch: () -> Unit
 ) {
     val viewModel = viewModel<NewPatchViewModel>()
 
@@ -687,9 +741,7 @@ private fun PatchOptionsBody(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth(),
             onAddEmbed = onAddEmbed,
-            onStartPatch = {
-                viewModel.dispatch(NewPatchViewModel.ViewAction.SubmitPatch)
-            }
+            onStartPatch = onStartPatch
         )
     }
 }
@@ -1368,26 +1420,106 @@ private fun DoPatchBody(modifier: Modifier, navigator: DestinationsNavigator) {
 
 @Composable
 private fun InstallDialog2(patchApp: org.ytp.util.LSPPackageManager.AppInfo, onFinish: (Int, String?) -> Unit) {
-
-    suspend fun doInstall() {
-        Log.i(TAG, "Installing app with system installer: ${patchApp.app.packageName}")
-        val apkFiles = org.ytp.lspApp.targetApkFiles
-        if (apkFiles.isNullOrEmpty()) {
-            onFinish(PackageInstaller.STATUS_FAILURE, "No target APK files found for installation")
-            return
-        }
-        // install every apk of the patched app, otherwise apps with split apks stay incomplete
-        val result = installApks(_root_ide_package_.org.ytp.lspApp, apkFiles)
-        onFinish(result.status, result.message)
-    }
+    val checkingText = stringResource(R.string.patch_install_checking)
+    val installingText = stringResource(R.string.patch_install_installing)
+    val conflictTitle = stringResource(R.string.patch_install_conflict_title)
+    val cancelText = stringResource(R.string.restore_cancel)
+    val forceText = stringResource(R.string.patch_install_force)
 
     // 安装副作用不能跟着 composition 反复触发：旋转/重建会取消正在跑的协程，
     // 这里用 rememberSaveable 记住"这个 patch 结果已经触发过安装"，只跑一次。
     var installTriggered by rememberSaveable(patchApp.app.packageName) { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(true) }
+    var installing by remember { mutableStateOf(false) }
+    // 签名不一致时先把冲突信息摆出来，等用户选「强制安装」还是取消。
+    var conflict by remember { mutableStateOf<org.ytp.ui.util.InstallTarget?>(null) }
+
+    suspend fun install(force: Boolean) {
+        busy = true
+        installing = false
+        val apkFiles = org.ytp.lspApp.targetApkFiles
+        if (apkFiles.isNullOrEmpty()) {
+            busy = false
+            onFinish(
+                PackageInstaller.STATUS_FAILURE,
+                org.ytp.lspApp.getString(R.string.install_error_no_apks)
+            )
+            return
+        }
+        // 装之前先看清设备上的情况：没装过直接装；装过且签名一致直接覆盖安装；签名不一致时
+        // 系统会拒绝覆盖，这时先把冲突告诉用户（除非已经决定强制安装）。
+        val target = org.ytp.ui.util.planInstall(org.ytp.lspApp, apkFiles)
+        if (target?.plan == org.ytp.ui.util.InstallPlan.SIGNER_MISMATCH && !force) {
+            busy = false
+            conflict = target
+            return
+        }
+        installing = true
+        Log.i(
+            TAG,
+            "Installing app with system installer: ${patchApp.app.packageName} (force=$force, plan=${target?.plan})"
+        )
+        conflict = null
+        // install every apk of the patched app, otherwise apps with split apks stay incomplete
+        val outcome = org.ytp.ui.util.installPatched(org.ytp.lspApp, apkFiles, force)
+        installing = false
+        busy = false
+        if (outcome.needsForce) {
+            conflict = outcome.target
+            return
+        }
+        onFinish(outcome.result.status, outcome.result.message)
+    }
+
     LaunchedEffect(patchApp.app.packageName) {
         if (installTriggered) return@LaunchedEffect
         installTriggered = true
         Log.d(TAG, "State changed to install, starting installation via system.")
-        doInstall()
+        install(force = org.ytp.config.Configs.forceInstall)
+    }
+
+    // 强制安装按钮点下去要跑挂起函数，得有自己的作用域（对话框本身不是协程环境）。
+    val dialogScope = rememberCoroutineScope()
+
+    if (conflict != null) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text(conflictTitle) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.patch_install_conflict_message,
+                        conflict?.packageName.orEmpty()
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { dialogScope.launch { install(force = true) } }) {
+                    Text(forceText)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        conflict = null
+                        // 用户放弃安装：按「取消」处理，不报安装失败。
+                        onFinish(org.ytp.util.LSPPackageManager.STATUS_USER_CANCELLED, null)
+                    }
+                ) { Text(cancelText) }
+            }
+        )
+    } else if (busy) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text(if (installing) installingText else checkingText) },
+            text = {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = YtpColors.ThemePrimary,
+                    trackColor = YtpColors.ThemePrimary.copy(alpha = 0.14f)
+                )
+            },
+            confirmButton = { }
+        )
     }
 }

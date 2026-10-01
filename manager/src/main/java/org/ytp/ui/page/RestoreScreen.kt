@@ -57,6 +57,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.ramcosta.composedestinations.annotation.Destination
@@ -66,13 +67,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.ytp.R
+import org.ytp.config.Configs
 import org.ytp.ui.component.CenterTopBar
 import org.ytp.ui.component.YtpCard
 import org.ytp.ui.component.YtpEmptyState
 import org.ytp.ui.theme.YtpColors
 import org.ytp.ui.util.LocalSnackbarHost
-import org.ytp.ui.util.installApks
-import org.ytp.ui.util.uninstallApk
+import org.ytp.ui.util.InstallOutcome
+import org.ytp.ui.util.InstallPlan
+import org.ytp.ui.util.InstallTarget
+import org.ytp.ui.util.installPatched
+import org.ytp.ui.util.planInstall
 import org.ytp.util.OriginApkStore
 import java.io.File
 import java.text.DateFormat
@@ -104,8 +109,20 @@ fun RestoreScreen(navigator: DestinationsNavigator) {
     var refreshKey by remember { mutableIntStateOf(0) }
     var pendingDelete by remember { mutableStateOf<OriginApkStore.Backup?>(null) }
     var pendingExtract by remember { mutableStateOf<OriginApkStore.Backup?>(null) }
+    // 卸载/安装都交给系统界面去做（ACTION_DELETE / 安装器），拿不到结果回调，所以这里记一笔
+    // "刚发起过外部动作"，回到前台后连查几次，列表就不会等到下一次自动刷新才更新。
+    var pendingExternalAction by remember { mutableStateOf(false) }
+    var settleTicks by remember { mutableIntStateOf(0) }
     // 每次扫描都会对每个备份做 PackageManager 查询，刚扫完就别再扫（旋转/快速前后台切换）。
     val refreshedAt = remember { AtomicLong(0L) }
+
+    LaunchedEffect(settleTicks) {
+        if (settleTicks == 0) return@LaunchedEffect
+        repeat(SETTLE_REFRESH_COUNT) {
+            refreshKey++
+            delay(SETTLE_REFRESH_INTERVAL_MS)
+        }
+    }
 
     LaunchedEffect(refreshKey) {
         if (items.isEmpty()) loading = true
@@ -132,7 +149,13 @@ fun RestoreScreen(navigator: DestinationsNavigator) {
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
                     resumed = true
-                    if (isRestoreRefreshDue(refreshedAt)) refreshKey++
+                    if (pendingExternalAction) {
+                        // 刚从系统卸载界面/安装器回来：立刻查，并在几秒内settle 几次。
+                        pendingExternalAction = false
+                        settleTicks++
+                    } else if (isRestoreRefreshDue(refreshedAt)) {
+                        refreshKey++
+                    }
                 }
 
                 Lifecycle.Event.ON_PAUSE -> resumed = false
@@ -150,6 +173,13 @@ fun RestoreScreen(navigator: DestinationsNavigator) {
             // 上一次扫描还没结束（或者刚刚结束）就跳过这一轮，避免扫描任务堆积。
             if (isRestoreRefreshDue(refreshedAt)) refreshKey++
         }
+    }
+
+    // 卸载是交给系统界面做的，靠它的回执（EXTRA_RETURN_RESULT）或回前台时的补查来更新列表。
+    val uninstallLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        settleTicks++
     }
 
     val extractLauncher = rememberLauncherForActivityResult(
@@ -170,6 +200,33 @@ fun RestoreScreen(navigator: DestinationsNavigator) {
                 )
             )
         }
+    }
+
+    // 安装前的签名检查：设备上装了同名应用但签名不同时不能直接覆盖安装，先把冲突摆出来，
+    // 由用户决定要不要强制安装（先卸载已安装的版本再装原始包）。
+    var installConflict by remember { mutableStateOf<InstallTarget?>(null) }
+    var conflictFiles by remember { mutableStateOf<List<File>>(emptyList()) }
+
+    // 已交给系统安装器（或已经装好）都算交接成功，其它状态才算安装失败。
+    suspend fun reportInstall(outcome: InstallOutcome) {
+        val handedOver = outcome.result.status == PackageInstaller.STATUS_SUCCESS ||
+            outcome.result.status == PackageInstaller.STATUS_PENDING_USER_ACTION
+        snackbarHost.showSnackbar(
+            context.getString(
+                if (handedOver) R.string.restore_handed_over else R.string.restore_install_failed
+            )
+        )
+    }
+
+    suspend fun installBackup(files: List<File>, force: Boolean) {
+        val target = planInstall(context, files)
+        val forced = force || Configs.forceInstall
+        if (target?.plan == InstallPlan.SIGNER_MISMATCH && !forced) {
+            installConflict = target
+            conflictFiles = files
+            return
+        }
+        reportInstall(installPatched(context, files, forced))
     }
 
     Scaffold(
@@ -204,24 +261,22 @@ fun RestoreScreen(navigator: DestinationsNavigator) {
                 items(items, key = { it.backup.packageName }) { item ->
                     RestoreCard(
                         item = item,
-                        onUninstall = { uninstallApk(context, item.installedName) },
+                        onUninstall = {
+                            // 系统卸载界面能回结果（EXTRA_RETURN_RESULT：卸载成功是 RESULT_FIRST_USER），
+                            // 拿不到结果的设备也还有 ON_RESUME 的 settle 补查兜底。
+                            pendingExternalAction = true
+                            uninstallLauncher.launch(
+                                Intent(
+                                    Intent.ACTION_DELETE,
+                                    "package:${item.installedName}".toUri()
+                                ).putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                            )
+                        },
                         onInstall = { files ->
-                            // installApks 现在是 suspend 且返回真实安装状态：交给安装器（含等待用户确认）
-                            // 与安装成功都算"已交给系统安装器"，其它状态才报安装失败。
-                            scope.launch {
-                                val result = installApks(context, files)
-                                val handedOver = result.status == PackageInstaller.STATUS_SUCCESS ||
-                                    result.status == PackageInstaller.STATUS_PENDING_USER_ACTION
-                                snackbarHost.showSnackbar(
-                                    context.getString(
-                                        if (handedOver) {
-                                            R.string.restore_handed_over
-                                        } else {
-                                            R.string.restore_install_failed
-                                        }
-                                    )
-                                )
-                            }
+                            // 装之前先看设备上的情况：没装过直接装，装过且签名一致直接覆盖，
+                            // 签名不一致时弹框问要不要强制安装（installBackup 里处理）。
+                            pendingExternalAction = true
+                            scope.launch { installBackup(files, force = false) }
                         },
                         onDelete = { pendingDelete = item.backup },
                         onExtract = {
@@ -258,6 +313,44 @@ fun RestoreScreen(navigator: DestinationsNavigator) {
             },
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.restore_cancel))
+                }
+            }
+        )
+    }
+
+    // 签名冲突：装原始包会覆盖掉已安装的（可能是打过补丁的）应用，所以要用户点头。
+    val conflict = installConflict
+    if (conflict != null) {
+        val files = conflictFiles
+        AlertDialog(
+            onDismissRequest = {
+                installConflict = null
+                conflictFiles = emptyList()
+            },
+            title = { Text(stringResource(R.string.patch_install_conflict_title)) },
+            text = {
+                Text(stringResource(R.string.patch_install_conflict_message, conflict.packageName))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        installConflict = null
+                        conflictFiles = emptyList()
+                        pendingExternalAction = true
+                        scope.launch { installBackup(files, force = true) }
+                    }
+                ) {
+                    Text(stringResource(R.string.patch_install_force))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        installConflict = null
+                        conflictFiles = emptyList()
+                    }
+                ) {
                     Text(stringResource(R.string.restore_cancel))
                 }
             }
@@ -408,6 +501,10 @@ private const val AUTO_REFRESH_INTERVAL_MS = 10_000L
 
 /** 距离上次扫描完成至少要过这么久才允许再扫一次。 */
 private const val MIN_RESTORE_REFRESH_INTERVAL_MS = 5_000L
+
+// 外部动作（卸载/安装）回到前台后的补查：系统界面不回调结果，连查几次直到状态稳定。
+private const val SETTLE_REFRESH_COUNT = 5
+private const val SETTLE_REFRESH_INTERVAL_MS = 700L
 
 private fun isRestoreRefreshDue(refreshedAt: AtomicLong): Boolean =
     SystemClock.elapsedRealtime() - refreshedAt.get() > MIN_RESTORE_REFRESH_INTERVAL_MS

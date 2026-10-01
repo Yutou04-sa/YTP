@@ -14,20 +14,28 @@ import android.content.Intent
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,9 +46,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
@@ -55,18 +68,19 @@ import org.ytp.ui.theme.YtpColors
 import org.ytp.ui.util.LocalSnackbarHost
 import java.io.IOException
 
-private const val TAG = "AppFab"
+private const val TAG = "NewPatchEntry"
 
 /**
- * Floating "+" button in the bottom-end corner of the home screen. Choosing an apk happens in two
- * steps:
+ * Home screen entry that starts a new patch: a full width row card (icon box + title + hint +
+ * chevron) in the same shape as the other home entries, instead of the floating "+" button that
+ * used to sit in the bottom end corner. Choosing an apk still happens in two steps:
  * first the user picks where the apk comes from (storage or the list of installed apps),
  * then - only when it is actually missing - a writable storage directory is requested,
  * because patched apks are written there.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppFab(navigator: DestinationsNavigator, modifier: Modifier = Modifier) {
+fun NewPatchEntry(navigator: DestinationsNavigator, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val snackbarHost = LocalSnackbarHost.current
     val scope = rememberCoroutineScope()
@@ -219,16 +233,74 @@ fun AppFab(navigator: DestinationsNavigator, modifier: Modifier = Modifier) {
         )
     }
 
-    FloatingActionButton(
+    val shape = RoundedCornerShape(20.dp)
+    val iconShape = RoundedCornerShape(14.dp)
+    val accent = YtpColors.Primary
+
+    Card(
         onClick = { showChooser = true },
-        modifier = modifier,
-        containerColor = YtpColors.Primary,
-        contentColor = YtpColors.OnPrimary
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 6.dp,
+                shape = shape,
+                ambientColor = YtpColors.Shadow.copy(alpha = 0.02f),
+                spotColor = accent.copy(alpha = 0.07f)
+            ),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = YtpColors.Surface),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.22f))
     ) {
-        Icon(
-            imageVector = Icons.Filled.Add,
-            contentDescription = stringResource(R.string.add),
-            modifier = Modifier.size(28.dp)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(iconShape)
+                    .background(YtpColors.iconBackground(accent, 0.14f))
+                    .border(1.dp, YtpColors.IconButtonBorder, iconShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Terminal,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = YtpColors.iconForeground(accent)
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.screen_new_patch),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = YtpColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = stringResource(R.string.home_new_patch_desc),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = YtpColors.TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Icon(
+                imageVector = Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = YtpColors.TextSecondary
+            )
+        }
     }
 }

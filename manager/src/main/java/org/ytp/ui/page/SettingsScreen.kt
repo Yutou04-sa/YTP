@@ -49,9 +49,13 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.InstallMobile
+import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Opacity
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
@@ -110,6 +114,8 @@ import org.ytp.config.Configs
 import org.ytp.config.MyKeyStore
 import org.ytp.ui.component.AnywhereDropdown
 import org.ytp.ui.page.destinations.AboutScreenDestination
+import org.ytp.ui.page.destinations.PermissionScreenDestination
+import org.ytp.ui.page.destinations.PatchSoundScreenDestination
 import org.ytp.ui.theme.YtpColors
 import org.ytp.ui.util.LocalSnackbarHost
 import java.io.File
@@ -174,6 +180,14 @@ fun SettingsScreen(navigator: DestinationsNavigator) {
                 KeyStore()
                 SettingsDividerLine()
                 StorageDirectory()
+                SettingsDividerLine()
+                Permissions(navigator)
+                SettingsDividerLine()
+                PatchSoundsToggle()
+                SettingsDividerLine()
+                PromptSoundLibrary(navigator)
+                SettingsDividerLine()
+                ForceInstallToggle()
                 SettingsDividerLine()
                 DetailPatchLogs()
                 SettingsDividerLine()
@@ -786,6 +800,97 @@ private fun DetailPatchLogs() {
                     uncheckedBorderColor = Color.Transparent
                 )
             )
+        }
+    )
+}
+
+@Composable
+private fun PatchSoundsToggle() {
+    var checked by rememberSaveable {
+        mutableStateOf(Configs.patchSounds)
+    }
+
+    SettingRow(
+        icon = Icons.Outlined.VolumeUp,
+        title = stringResource(R.string.settings_patch_sounds),
+        desc = stringResource(R.string.settings_patch_sounds_description),
+        accent = YtpColors.AccentPurple,
+        trailing = {
+            Switch(
+                checked = checked,
+                onCheckedChange = {
+                    checked = it
+                    Configs.patchSounds = it
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = YtpColors.OnPrimary,
+                    checkedTrackColor = YtpColors.ThemePrimary,
+                    uncheckedThumbColor = YtpColors.OnPrimary,
+                    uncheckedTrackColor = YtpColors.ControlTrackOff,
+                    uncheckedBorderColor = Color.Transparent
+                )
+            )
+        }
+    )
+}
+
+@Composable
+private fun ForceInstallToggle() {
+    var checked by rememberSaveable {
+        mutableStateOf(Configs.forceInstall)
+    }
+
+    SettingRow(
+        icon = Icons.Outlined.InstallMobile,
+        title = stringResource(R.string.settings_force_install),
+        desc = stringResource(R.string.settings_force_install_description),
+        accent = YtpColors.Warning,
+        trailing = {
+            Switch(
+                checked = checked,
+                onCheckedChange = {
+                    checked = it
+                    Configs.forceInstall = it
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = YtpColors.OnPrimary,
+                    checkedTrackColor = YtpColors.ThemePrimary,
+                    uncheckedThumbColor = YtpColors.OnPrimary,
+                    uncheckedTrackColor = YtpColors.ControlTrackOff,
+                    uncheckedBorderColor = Color.Transparent
+                )
+            )
+        }
+    )
+}
+
+@Composable
+private fun PromptSoundLibrary(
+    navigator: DestinationsNavigator
+) {
+    // 上面那一行只是开关，这里进去才是挑音源、试听、加自定义音频的地方
+    SettingRow(
+        icon = Icons.Outlined.LibraryMusic,
+        title = stringResource(R.string.settings_patch_sound_library),
+        desc = stringResource(R.string.settings_patch_sound_library_description),
+        accent = YtpColors.Primary,
+        onClick = {
+            navigator.navigate(PatchSoundScreenDestination)
+        }
+    )
+}
+
+@Composable
+private fun Permissions(
+    navigator: DestinationsNavigator
+) {
+    SettingRow(
+        icon = Icons.Outlined.Lock,
+        title = stringResource(R.string.settings_permissions),
+        desc = stringResource(R.string.settings_permissions_description),
+        accent = YtpColors.Success,
+        onClick = {
+            navigator.navigate(PermissionScreenDestination)
         }
     )
 }

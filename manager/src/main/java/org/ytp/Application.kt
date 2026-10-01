@@ -16,8 +16,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.ytp.model.UpdateInfo
 import org.ytp.util.LSPPackageManager
+import org.ytp.util.PatchSoundLibrary
+import org.ytp.util.PatchSounds
 import org.ytp.config.Configs
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.io.File
@@ -54,6 +57,18 @@ open class Application : android.app.Application() {
         tmpApkDir = cacheDir.resolve("apk").also { it.mkdir() }
         prefs = lspApp.getSharedPreferences("settings", MODE_PRIVATE)
         Configs.migrateTheme()
+        // 提示音：素材要先复制到私有目录并读一遍时长，放后台做，别拖慢启动；
+        // 准备好之后再回主线程预热播放器，这样修补开始时能立刻出声。
+        globalScope.launch {
+            try {
+                PatchSoundLibrary.sync()
+                withContext(Dispatchers.Main) {
+                    PatchSounds.preload()
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to prepare the prompt sounds", t)
+            }
+        }
         globalScope.launch {
             try {
                 LSPPackageManager.fetchAppList()

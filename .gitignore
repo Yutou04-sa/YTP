@@ -30,3 +30,7 @@ libxposed
 /manager/signing/*.bks
 /manager/signing/*.p12
 /manager/signing/signing.properties
+
+# Prompt sounds: pulled out of third-party apks, so they only ride along in
+# local builds (added as an extra asset source dir in manager/build.gradle.kts)
+/manager/sounds/
